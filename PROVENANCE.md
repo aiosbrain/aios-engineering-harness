@@ -35,6 +35,12 @@ pattern library (patterns A1–E5).
 | `models/routing.yaml` | oh-my-opencode's category-based delegation ([omo.dev](https://omo.dev)); Amp's Oracle/Worker split & no-model-picker philosophy; [cc-compatible-models](https://github.com/Alorse/cc-compatible-models) wiring | E1, B6 | Categories → model + fallback chain; frontier reserved for plan/review/merge. |
 | `docs/autonomy-ladder.md` | AM maturity spine + "earn the leash" (E5); Anthropic guardrails practice; sandbox tier ladder (devcontainer → worktree → microVM) | B6, E5 | The team-rollout story. |
 | `docs/adopt-any-stack.md` | Armin Ronacher's stack-agnostic recommendations ([lucumr](https://lucumr.pocoo.org/2025/6/12/agentic-coding/)); AGENTS.md field practice | A1, E3 | |
+| `adapters/zed` | Zed's [ACP](https://zed.dev/acp) (editor-as-thin-client; agent keeps its runtime/tools) | B5, E3 | The pack's editor surface with zero porting. |
+| `evals/guards.test.sh` + `scenarios/` | Hamel Husain (eval discipline, [Your AI Product Needs Evals](https://hamel.dev/blog/posts/evals/)); AM D3 eval-driven development; obra's skill pressure-testing | D3, D4 | Layer 1 deterministic + layer 2 behavioral; pass-rate automation is roadmap. |
+| `modules/aios-cli` | AIOS toolkit ([aiosbrain/aios-workspace](https://github.com/aiosbrain/aios-workspace)): operator loop, Team Brain sync, gated ship pipeline | C4-C6, D1 | By reference + version pin, not vendored. |
+| `modules/agentic-maturity` | AIOS AM framework + the workspace `agentic-maturity` skill (verification cap, weakest-axis prescription) | E5 | Standalone interview version; signal-based scoring via the CLI module. |
+| `modules/cost-monitor` | [ccusage](https://github.com/ryoppippi/ccusage); AIOS `cost-monitor` skill (team rollup) | E1, B6 | |
+| `modules/context-monitor` | Dex Horthy (utilization discipline); Cherny line-test; oh-my-opencode defensive-hooks posture | A1, A2 | |
 
 ## Practitioners this pack is distilled from
 

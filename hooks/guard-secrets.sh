@@ -52,7 +52,8 @@ else
 fi
 
 for pattern in "${PATTERNS[@]}"; do
-  if printf '%s' "$CONTENT" | grep -qE "$pattern" 2>/dev/null; then
+  # `--` so patterns beginning with `-` (e.g. PEM headers) aren't read as grep options
+  if printf '%s' "$CONTENT" | grep -qE -- "$pattern" 2>/dev/null; then
     {
       echo "BLOCKED by guard-secrets: potential secret detected in ${FILE_PATH:-<unknown>}"
       echo "Pattern matched: $pattern"
