@@ -35,7 +35,9 @@ this pack.
 | **Subagents** | [`agents/`](agents/) | The review panel: fresh-context code reviewer, adversarial verifier, security reviewer, behavior-preserving simplifier. |
 | **Rubrics** | [`rubrics/`](rubrics/) | Machine-checkable readiness criteria — a spec-readiness gate (is this plan pick-up-able by a cold-start agent?) and a code-review grading sheet. Verdict-gated, refute-style. |
 | **Model routing** | [`models/routing.yaml`](models/routing.yaml) | Category-based multi-model delegation: a frontier lane for planning/review/merge, a bulk lane (e.g. GLM), a cheap utility lane — with fallback chains. Route by capability tier, never expose a model picker. |
-| **Adapters** | [`adapters/`](adapters/) | Wiring for Claude Code (`settings.json`, hooks, permission rails), opencode, and Codex CLI. |
+| **Adapters** | [`adapters/`](adapters/) | Wiring for Claude Code (`settings.json`, hooks, permission rails), opencode, Codex CLI, and Zed (via ACP — the harness inside an editor, unchanged). |
+| **Evals** | [`evals/`](evals/) | The harness verifying itself: a 42-case deterministic battery for the guards (`guards.test.sh`) plus behavioral pressure-test scenarios for the core skills. |
+| **Optional modules** | [`modules/`](modules/) | Opt-in batteries the core never depends on: the AIOS CLI (loop engineering + Team Brain), agentic-maturity self-assessment, cost monitoring, context-hygiene monitoring. |
 | **Docs** | [`docs/`](docs/) | [Adopt on any stack](docs/adopt-any-stack.md) · [The autonomy ladder](docs/autonomy-ladder.md) (how a team rolls this out *safely*) · [Thin spots](docs/thin-spots.md). |
 
 ## The maturity model behind it

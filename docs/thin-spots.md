@@ -18,10 +18,11 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
   policy mechanically yet — MG6 (bulk output needs frontier review) is enforced by
   rubric + process. The category-routing pattern it encodes is proven elsewhere
   (oh-my-opencode, Amp); our YAML contract for it is new.
-- **No eval suite.** The pack asserts its skills change agent behavior; obra-style
-  pressure-testing (`skill-author` describes it) has been applied ad hoc, not as a
-  maintained eval battery with regression tracking. This is the biggest credibility gap
-  vs. the state of the art (Hamel Husain would not approve — yet).
+- **Evals exist but are young.** [`evals/`](../evals/) now ships a deterministic
+  42-case guard battery (it has already caught two real hook bugs) and behavioral
+  pressure-test scenarios for the core skills — but scenarios run manually, with no
+  pass-rate tracking over time yet. Layer 3 (automation, skill-trigger evals, lane
+  economics measurement) is the gap; see `evals/README.md`.
 
 ## Deferred (deliberately not in v0)
 
@@ -29,7 +30,9 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
   (one command per stage, worktree-isolated, fail-closed gates) exists in the AIOS
   toolkit (`aios build/ship/spec/simplify/consolidate-findings`) but is coupled to its
   workspace + Linear conventions. Extracting it as a standalone CLI is the headline V1
-  item — v0 ships the methodology (skills/rubrics/agents) that the CLI automates.
+  item — v0 ships the methodology (skills/rubrics/agents) that the CLI automates, and
+  [`modules/aios-cli`](../modules/aios-cli/) documents using it in place today for
+  teams willing to take the ecosystem coupling.
 - **Rung 4 / unattended loops (Ralph).** Powerful and real (see PROVENANCE), but only
   safe behind sandbox + comprehensive tests + rollback + cost caps, all four. We'd
   rather ship the ladder that earns it than the loop that skips it.
@@ -42,8 +45,9 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
   hold for humans and agents alike, and for agents running outside the harness).
   Today: local hooks + branch protection.
 - **Team Brain / telemetry integration.** Plugging harness activity (lanes used,
-  escapes, ladder movement) into a shared team surface. Roadmap, tied to the AIOS
-  workspace ecosystem this pack grew out of.
+  escapes, ladder movement) into a shared team surface. Available today by adopting
+  [`modules/aios-cli`](../modules/aios-cli/) (an explicit ecosystem opt-in); a
+  looser-coupled telemetry story for non-AIOS teams remains roadmap.
 
 ## Known trade-offs
 
