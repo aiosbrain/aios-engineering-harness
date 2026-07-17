@@ -20,7 +20,7 @@ ORDER=$(jq -s '
   {test_then_red_before_impl:($test_edit != null and $red != null and $impl_edit != null and $test_edit < $red and $red < $impl_edit),
    test_before_impl:($test_edit != null and $impl_edit != null and $test_edit < $impl_edit),
    green_after_impl:($impl_edit != null and any(to_entries[]; .key > $impl_edit and .value.record_type == "check" and .value.status == 0))}
-' "$TRACE" 2>/dev/null || printf '%s' '{"red_before_test":false,"test_before_impl":false,"green_after_impl":false}')
+' "$TRACE" 2>/dev/null || printf '%s' '{"test_then_red_before_impl":false,"test_before_impl":false,"green_after_impl":false}')
 
 jq -n --argjson final "$FINAL_GREEN" --argjson scope "$SCOPE_OK" \
   --argjson test_changed "$TEST_CHANGED" --argjson impl_changed "$IMPL_CHANGED" \

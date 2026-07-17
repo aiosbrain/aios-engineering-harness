@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,8 +29,109 @@ def event_base(runtime: str, kind: str, workspace: str, session: str = "") -> di
     }
 
 
+PYTHON = re.compile(r"^python(?:3(?:\.\d+)*)?$")
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def command_segments(command: str) -> list[list[str]]:
+    """Return simple-command tokens without treating quoted check names as execution."""
+    segments: list[list[str]] = []
+    for segment in re.split(r"\s*(?:&&|\|\||[;|])\s*", command):
+        if not segment.strip():
+            continue
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            continue
+        if tokens:
+            segments.append(tokens)
+    return segments
+
+
+def unwrap_command(tokens: list[str]) -> list[str]:
+    """Strip environment assignments and common execution wrappers."""
+    remaining = list(tokens)
+    while remaining and ASSIGNMENT.match(remaining[0]):
+        remaining.pop(0)
+    while remaining:
+        executable = os.path.basename(remaining[0])
+        if executable == "env":
+            remaining.pop(0)
+            while remaining and (remaining[0].startswith("-") or ASSIGNMENT.match(remaining[0])):
+                remaining.pop(0)
+        elif executable == "command":
+            remaining.pop(0)
+            while remaining and remaining[0].startswith("-"):
+                remaining.pop(0)
+        elif executable in {"timeout", "gtimeout"}:
+            remaining.pop(0)
+            while remaining and remaining[0].startswith("-"):
+                remaining.pop(0)
+            if remaining:
+                remaining.pop(0)
+        elif executable in {"uv", "poetry", "pipenv"} and len(remaining) > 1 and remaining[1] == "run":
+            remaining = remaining[2:]
+        else:
+            break
+        while remaining and ASSIGNMENT.match(remaining[0]):
+            remaining.pop(0)
+    return remaining
+
+
+def check_kind(command: str) -> str | None:
+    for tokens in command_segments(command):
+        tokens = unwrap_command(tokens)
+        if not tokens or not PYTHON.match(os.path.basename(tokens[0])):
+            continue
+        arguments = tokens[1:]
+        if "-c" in arguments:
+            continue
+        for index, argument in enumerate(arguments):
+            if argument == "-m" and index + 1 < len(arguments) and arguments[index + 1] == "unittest":
+                return "unittest"
+            if not argument.startswith("-") and os.path.basename(argument) == "check.py":
+                return "check.py"
+    return None
+
+
 def is_check(command: str) -> bool:
-    return "check.py" in command or "unittest" in command
+    return check_kind(command) is not None
+
+
+def fixture_checks(path: str) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    try:
+        lines = Path(path).read_text(errors="replace").splitlines()
+    except OSError:
+        return checks
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        status = record.get("status")
+        if (record.get("record_type") == "check" and
+                isinstance(record.get("command"), str) and
+                isinstance(status, (int, float)) and not isinstance(status, bool)):
+            checks.append(record)
+    return checks
+
+
+def reconcile_checks(events: list[dict[str, Any]], authoritative: list[dict[str, Any]]) -> None:
+    """Replace transcript check statuses in place with same-kind fixture exit codes."""
+    unused = set(range(len(authoritative)))
+    for event in events:
+        if event.get("record_type") != "check":
+            continue
+        kind = check_kind(str(event.get("command") or ""))
+        match = next(
+            (index for index in sorted(unused)
+             if check_kind(str(authoritative[index].get("command") or "")) == kind),
+            None,
+        )
+        if match is not None:
+            event["status"] = authoritative[match]["status"]
+            unused.remove(match)
 
 
 def patch_paths(patch: str, workspace: str) -> list[dict[str, str]]:
@@ -72,7 +175,10 @@ def codex(record: dict[str, Any], workspace: str) -> list[dict[str, Any]]:
         out.update({"tool_name": "Bash", "tool_id": item.get("id", ""), "command": command})
         records = [out]
         if is_check(command):
-            records.append({"record_type": "check", "command": command, "status": item.get("exit_code", 1)})
+            exit_code = item.get("exit_code", 1)
+            if not isinstance(exit_code, (int, float)) or isinstance(exit_code, bool):
+                exit_code = 1
+            records.append({"record_type": "check", "command": command, "status": exit_code})
         return records
     return []
 
@@ -108,9 +214,8 @@ def claude(record: dict[str, Any], workspace: str, pending: dict[str, str]) -> l
             tool_id = part.get("tool_use_id", "")
             command = pending.pop(tool_id, "")
             if is_check(command):
-                text = json.dumps(part.get("content", ""))
-                failed = bool(part.get("is_error")) or "FAILED" in text or "exit code 1" in text
-                records.append({"record_type": "check", "command": command, "status": 1 if failed else 0})
+                records.append({"record_type": "check", "command": command,
+                                "status": 1 if part.get("is_error") else 0})
     return records
 
 
@@ -138,42 +243,48 @@ def opencode(record: dict[str, Any], workspace: str) -> list[dict[str, Any]]:
         out = event_base("opencode", "pre_command", workspace, record.get("sessionID", ""))
         out.update({"tool_name": tool, "tool_id": tool_id, "command": command})
         records = [out]
-        if is_check(command) and state.get("status") in {"completed", "error"}:
-            output = str(state.get("output") or state.get("error") or "")
-            failed = state.get("status") == "error" or "FAILED" in output
-            records.append({"record_type": "check", "command": command, "status": 1 if failed else 0})
+        metadata_exit = (state.get("metadata") or {}).get("exit")
+        native_status = state.get("status")
+        if is_check(command) and isinstance(metadata_exit, (int, float)) and not isinstance(metadata_exit, bool):
+            records.append({"record_type": "check", "command": command, "status": metadata_exit})
+        elif is_check(command) and native_status in {"completed", "error"}:
+            records.append({"record_type": "check", "command": command,
+                            "status": 1 if native_status == "error" else 0})
         return records
     return []
 
 
 def main() -> int:
-    if len(sys.argv) != 5:
+    if len(sys.argv) != 6:
         return 2
-    runtime, transcript, output, workspace = sys.argv[1:]
+    runtime, transcript, output, workspace, hook_trace = sys.argv[1:]
     pending: dict[str, str] = {}
-    count = 0
-    with open(output, "w", encoding="utf-8") as target:
+    normalized: list[dict[str, Any]] = []
+    try:
+        lines = Path(transcript).read_text(errors="replace").splitlines()
+    except OSError:
+        return 4
+    for line in lines:
         try:
-            lines = Path(transcript).read_text(errors="replace").splitlines()
-        except OSError:
-            return 0
-        for line in lines:
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if runtime == "codex":
-                events = codex(record, workspace)
-            elif runtime == "claude":
-                events = claude(record, workspace, pending)
-            elif runtime == "opencode":
-                events = opencode(record, workspace)
-            else:
-                events = []
-            for event in events:
-                target.write(json.dumps(event, separators=(",", ":")) + "\n")
-                count += 1
-    return 0 if count else 4
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if runtime == "codex":
+            events = codex(record, workspace)
+        elif runtime == "claude":
+            events = claude(record, workspace, pending)
+        elif runtime == "opencode":
+            events = opencode(record, workspace)
+        else:
+            events = []
+        normalized.extend(events)
+    if not normalized:
+        return 4
+    reconcile_checks(normalized, fixture_checks(hook_trace))
+    with open(output, "w", encoding="utf-8") as target:
+        for event in normalized:
+            target.write(json.dumps(event, separators=(",", ":")) + "\n")
+    return 0
 
 
 if __name__ == "__main__":

@@ -40,9 +40,17 @@ disabled by default, accepts only paths under `scratch/` or `results/`, and exis
 the eval lab—not general telemetry. Raw traces can contain command or edit evidence
 and remain gitignored.
 
+Behavioral runs keep that raw data in `hook-events.jsonl`. The ordered grading stream
+in `events.jsonl` comes from the runtime transcript, with matching check statuses
+replaced by fixture-emitted numeric exit codes. Native status is used only when a check
+has no fixture record; output strings such as `FAILED` are never treated as exit status.
+
 ## What the conformance tests prove
 
-`bash evals/guards.test.sh` preserves the original 49 policy cases.
+`bash evals/guards.test.sh` preserves the original 49 policy cases and adds conservative
+plain-force-push regressions. `python3 evals/evidence.test.py` replays sanitized Claude,
+Codex, and OpenCode transcript shapes, and `bash evals/graders.test.sh` exercises diff,
+ordering, scope, and restored Variant B behavior.
 `bash evals/conformance.test.sh` adds native fixtures for all three runtimes, malformed
 and missing-dependency behavior, nested repository roots, multi-file formatting,
 renames, trace capture, and OpenCode loop protection. Runtime smoke tests validate
@@ -62,6 +70,9 @@ conformant merely because it reads `AGENTS.md`.
   as Claude Code or Codex.
 - Hook coverage is defense in depth. Filesystem sandboxing, managed policy, review,
   and CI are still needed for organization-critical controls.
+- The destructive guard deliberately blocks every plain `git push --force` and
+  `git push -f`, even for explicit feature branches. Use `--force-with-lease` or set
+  `HARNESS_ALLOW_DESTRUCTIVE=1` only after explicit approval.
 - Native payload schemas and tool names change. A new edit path is unsupported until
   it has a fixture and an adversarial smoke test.
 - Local smoke results show configuration compatibility at the pinned versions, not

@@ -38,11 +38,32 @@ fi
 ALL_DIR="$ROOT/evals/results/$STAMP-all"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --judge mock \
   --results-dir "$ALL_DIR" >/dev/null
-if jq -e '.total == 3 and .by_status.pass == 3 and .pass_rate == 1' "$ALL_DIR/summary.json" >/dev/null; then
+if jq -e '.total == 5 and .by_status.pass == 5 and .pass_rate == 1' "$ALL_DIR/summary.json" >/dev/null; then
   PASS=$((PASS+1)); echo "PASS: aggregate summary"
 else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate summary"
 fi
+
+INSTALL_ROOT=$(mktemp -d /tmp/harness-install-failure.XXXXXX)
+mkdir -p "$INSTALL_ROOT/evals/lib" "$INSTALL_ROOT/evals/drivers" "$INSTALL_ROOT/evals/scenarios"
+cp "$ROOT/evals/run.sh" "$INSTALL_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/install-harness.sh" "$INSTALL_ROOT/evals/lib/install-harness.sh"
+cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$INSTALL_ROOT/evals/scenarios/tdd-under-deadline"
+DRIVER_MARKER="$INSTALL_ROOT/driver-ran"
+printf '#!/bin/sh\ntouch "%s"\nexit 99\n' "$DRIVER_MARKER" > "$INSTALL_ROOT/evals/drivers/mock.sh"
+chmod +x "$INSTALL_ROOT/evals/drivers/mock.sh"
+INSTALL_RESULTS="$INSTALL_ROOT/results"
+bash "$INSTALL_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
+  --results-dir "$INSTALL_RESULTS" >/dev/null 2>&1
+if jq -e '.status == "error" and .reason == "harness installation failed"' \
+    "$INSTALL_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
+   jq -e '.total == 1 and .by_status.error == 1' "$INSTALL_RESULTS/summary.json" >/dev/null &&
+   [ ! -e "$DRIVER_MARKER" ]; then
+  PASS=$((PASS+1)); echo "PASS: install failure is recorded before driver execution"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: install failure handling"
+fi
+rm -rf "$INSTALL_ROOT"
 
 echo "runner.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

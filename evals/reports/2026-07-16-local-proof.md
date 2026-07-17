@@ -60,3 +60,23 @@ candidate output and check event.
 - OpenCode TypeScript normalization/plugin behavior: 9/9.
 - Installed runtime configuration loading: 3/3.
 - POSIX/Bash syntax, JSON parsing, and Python compilation: pass.
+
+## Post-review deterministic revalidation — 2026-07-17
+
+This section records the deterministic revalidation after PR #2 review findings
+#1–#6 were addressed. It does not replace or reinterpret the historical paid/live
+results above, and no paid model run was performed for this follow-up.
+
+- Guard suite: 52/52, including branchless, remote-only, and feature-branch plain
+  force-push blocking plus force-with-lease and explicit-approval behavior.
+- Protocol/native-payload conformance: 26/26.
+- Sanitized transcript evidence: 5/5 across Claude, Codex, and OpenCode shapes,
+  including authoritative fixture exit-code reconciliation without event reordering.
+- Scenario grader regressions: 8/8, including staged/unstaged diff violations and the
+  restored review-P1 and green-simplification cases.
+- Runner fault modes and aggregate behavior: 8/8, including an installation failure
+  recorded before any driver invocation.
+- Deterministic mock aggregate: 5/5 scenarios pass with the mock semantic judge.
+- Installed runtime configuration smoke: 3/3; paid/live mode was not used.
+- ShellCheck at error severity, shell syntax, JSON parsing, Python compilation,
+  `git diff --check`, and Gitleaks: pass; no leaks found.

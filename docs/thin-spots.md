@@ -21,7 +21,8 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
   (oh-my-opencode, Amp); our YAML contract for it is new.
 - **The eval lab is a validation tool, not a benchmark.** It automates isolated
   N-run scenarios, trajectory grading, summaries, and optional semantic judging.
-  Three scenarios are far too small for model comparisons, and live proof runs only
+  Five scenarios—including clean/P1 review calibration and red/green simplification
+  variants—are still far too small for model comparisons, and live proof runs only
   validate the lab/runtime path used on that date.
 
 ## Deferred (deliberately not in v0)

@@ -46,7 +46,7 @@ mkdir -p "$RESULTS_DIR" "$ROOT/evals/scratch"
 RESULTS_DIR=$(cd "$RESULTS_DIR" && pwd)
 
 if [ "$SCENARIO" = all ]; then
-  SCENARIOS=(tdd-under-deadline simplify-red-baseline review-honesty-clean-diff)
+  SCENARIOS=(tdd-under-deadline simplify-red-baseline simplify-green-baseline review-honesty-clean-diff review-honesty-real-p1)
 else
   SCENARIOS=("$SCENARIO")
 fi
@@ -83,7 +83,12 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
       continue
     fi
 
-    "$ROOT/evals/lib/install-harness.sh" "$ROOT" "$WORKSPACE" "$RUNTIME"
+    if ! "$ROOT/evals/lib/install-harness.sh" "$ROOT" "$WORKSPACE" "$RUNTIME"; then
+      jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" \
+        '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,status:"error",reason:"harness installation failed"}' > "$RUN_RECORD"
+      RUN_RECORDS+=("$RUN_RECORD")
+      continue
+    fi
     mkdir -p "$(dirname "$WORK_TRACE")"
     : > "$WORK_TRACE"
     git -C "$WORKSPACE" diff HEAD --binary > "$BEFORE_DIFF"
@@ -98,7 +103,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
 
     cp "$WORK_TRACE" "$HOOK_TRACE"
     TRANSCRIPT=$(jq -r '.transcript // empty' "$DRIVER_RECORD" 2>/dev/null || true)
-    if [ -n "$TRANSCRIPT" ] && python3 "$ROOT/evals/lib/normalize_transcript.py" "$RUNTIME" "$TRANSCRIPT" "$TRACE" "$WORKSPACE"; then
+    if [ -n "$TRANSCRIPT" ] && python3 "$ROOT/evals/lib/normalize_transcript.py" "$RUNTIME" "$TRANSCRIPT" "$TRACE" "$WORKSPACE" "$HOOK_TRACE"; then
       :
     else
       cp "$HOOK_TRACE" "$TRACE"

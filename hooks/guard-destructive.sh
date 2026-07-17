@@ -32,10 +32,9 @@ if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(-[a-zA-Z]*[rR
   fi
 fi
 
-if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[^;|&]*(--force([[:space:]]|$)|-f([[:space:]]|$))' &&
-   printf '%s' "$CMD" | grep -qE "(${PROTECTED_BRANCHES})"; then
-  block "force-push to a protected branch" \
-    "Force-pushing a protected branch rewrites shared history. Get explicit approval."
+if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+push[^;|&]*(--force([[:space:]]|$)|(^|[[:space:]])-f([[:space:]]|$))'; then
+  block "plain force-push" \
+    "Plain --force/-f is conservatively blocked for every branch. Use --force-with-lease or explicit approval."
 fi
 
 if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+(reset[[:space:]]+--hard|branch[[:space:]]+-D)[^;|&]*' &&
