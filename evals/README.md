@@ -1,52 +1,49 @@
-# Evals
+# Harness eval lab
 
-Verification is the value — including for the harness itself. This directory is the
-pack's own eval layer: does each component actually do what it claims, and does it keep
-doing it as it changes? (Approach per Hamel Husain's eval discipline and AM D3
-eval-driven development: start deterministic and cheap, grow toward behavioral evals
-from real failures, never let a component's claim outrun its evidence.)
+The lab checks policy conformance and agent trajectories without turning runtime smoke
+runs into a model leaderboard.
 
-## Layer 1 — deterministic (shipped, runnable)
-
-[`guards.test.sh`](guards.test.sh) — the regression battery for the five hooks:
-42 synthetic blocked/allowed tool-call payloads covering secrets, protected paths,
-destructive commands, the stop-gate (including loop protection), and the formatter's
-never-block contract.
+## Deterministic floors
 
 ```bash
-bash evals/guards.test.sh    # exit 0 = green; run before any change to hooks/ merges
+bash evals/guards.test.sh       # original 49 policy cases
+bash evals/conformance.test.sh  # native payloads and adapter behavior
+bash evals/runner.test.sh       # success/failure/timeout/malformed/unavailable lab cases
 ```
 
-Two rules keep it honest:
-- **Every field-found guard bug adds a case here** before the fix merges (this is
-  `compound-learnings` applied to the harness itself — the battery has already caught
-  two real bugs: an `rm -rf /` regex gap and a grep-option injection via patterns
-  starting with `-`).
-- Secret-like fixtures are assembled at runtime by concatenation, so the test file
-  itself never trips a secret scanner.
+Secret-shaped fixtures are assembled at runtime. Raw traces, transcripts, diffs, and
+scratch repositories live under ignored `evals/results/` and `evals/scratch/`.
 
-## Layer 2 — behavioral scenarios (shipped, agent-run)
+## Behavioral runs
 
-[`scenarios/`](scenarios/) — pressure-test scripts for the methodology skills, per the
-obra technique: put a *fresh* agent (with the skill installed) into a realistic
-situation where the easy path violates the skill, and grade what it does. Each scenario
-file states the setup, the temptation, and the pass/fail criteria; an
-`adversarial-verifier` (or a human) grades the transcript.
+Stable command:
 
-Run one: start a fresh session in a scratch repo with the pack installed, paste the
-scenario's **Prompt**, then grade against its **Pass criteria**. Automating this loop
-(N runs per scenario, pass-rate tracking over time) is the next step — see below.
+```bash
+bash evals/run.sh --runtime <claude|codex|opencode|mock> \
+  --scenario <tdd-under-deadline|simplify-red-baseline|review-honesty-clean-diff|all> \
+  --runs <n>
+```
 
-## Layer 3 — not built yet (honest)
+Optional flags include `--model`, `--timeout`, `--results-dir`, `--judge`, and
+`--judge-model`. Credentials come only from the installed runtime; the lab never reads
+or stores credential configuration.
 
-- **Pass-rate tracking:** scenarios run manually today; no harness runs them N times
-  and trends the results. This is the highest-value next build.
-- **Skill-trigger evals:** does each skill fire on the phrasings in its description
-  and stay quiet otherwise? Testable cheaply with a matrix of task prompts.
-- **End-to-end lane evals:** the routing table's claim (bulk lane + frontier review ≥
-  frontier-only quality at lower cost) is measurable on a fixed task set — currently
-  it's an argument, not a result.
+Each run creates an isolated temporary Git repository, installs a copy of the harness,
+passes the scenario prompt to a driver, grades deterministic evidence, and emits a run
+JSON plus an aggregate `summary.json`. Run records contain runtime/model, exit and
+duration, tool/check counts, changed paths, checks, available token/cost fields, and
+artifact locations. Missing usage remains `null` rather than estimated.
 
-The bar (from `docs/thin-spots.md`): a component's claims should not outrun its
-evidence. Layers 1–2 put a floor under the guards and core skills; layer 3 is where
-this pack goes from "credible" to "measured."
+The normalized trace interleaves adapter policy events with fixture-generated check
+records, so graders can establish check ordering, RED-before-implementation, final
+GREEN, path scope, and forbidden actions without trusting the final prose.
+
+`review-honesty-clean-diff` also needs semantic grading. Without `--judge`, a
+deterministically clean result is `needs_review`, never `pass`. A requested judge runs
+in a fresh session against the rubric and captured evidence; unavailable or malformed
+judge output also remains `needs_review`.
+
+The mock driver is deterministic and exists to test the lab. Live results demonstrate
+that adapters and scenarios execute on the installed runtimes. They do not establish
+general model superiority. Redacted local smoke reports may be committed under
+[`evals/reports/`](reports/); raw evidence remains ignored.

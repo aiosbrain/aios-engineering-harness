@@ -3,8 +3,7 @@
 A curated, drop-in harness for **agentic software engineering** — the skills, hooks,
 guards, subagent definitions, verification rubrics, and model-routing conventions that
 make coding agents produce production-grade work on any stack (TypeScript, PHP, Python,
-Go, …) under any of the major agent runtimes (Claude Code first; opencode and Codex CLI
-via adapters).
+Go, …) under Claude Code, Codex, and OpenCode through equal first-class adapters.
 
 **This is a curation-and-synthesis project, not an invention.** Every component cites
 where it came from — the practicing agentic engineers and open-source packs whose
@@ -31,14 +30,14 @@ this pack.
 |---|---|---|
 | **Contracts** | [`AGENTS.md`](AGENTS.md) · [`CONSTITUTION.md`](CONSTITUTION.md) | The repo↔agent contract (slow facts, conventions, error-ledger) and the pinned engineering principles with a machine-readable digest agents ingest every session. |
 | **Skills** | [`skills/`](skills/) | Ten curated methodology skills — plan-first, fail-first TDD, systematic debugging, verification, post-review simplification, compounding learnings, and a skill that writes new skills. Portable `SKILL.md` format (Claude Code, Codex, opencode). |
-| **Hooks & guards** | [`hooks/`](hooks/) | Enforcement, not suggestion: secrets guard, destructive-command guard, protected-path guard, format-on-edit, and a stop-gate that blocks "done" until the check passes. |
+| **Hooks & guards** | [`hooks/`](hooks/) | A versioned normalized event contract plus portable POSIX policies for secrets, destructive commands, protected paths, formatting, and stop verification. |
 | **Subagents** | [`agents/`](agents/) | The review panel: fresh-context code reviewer, adversarial verifier, security reviewer, behavior-preserving simplifier. |
 | **Rubrics** | [`rubrics/`](rubrics/) | Machine-checkable readiness criteria — a spec-readiness gate (is this plan pick-up-able by a cold-start agent?) and a code-review grading sheet. Verdict-gated, refute-style. |
 | **Model routing** | [`models/routing.yaml`](models/routing.yaml) | Category-based multi-model delegation: a frontier lane for planning/review/merge, a bulk lane (e.g. GLM), a cheap utility lane — with fallback chains. Route by capability tier, never expose a model picker. |
-| **Adapters** | [`adapters/`](adapters/) | Wiring for Claude Code (`settings.json`, hooks, permission rails), opencode, Codex CLI, and Zed (via ACP — the harness inside an editor, unchanged). |
-| **Evals** | [`evals/`](evals/) | The harness verifying itself: a 42-case deterministic battery for the guards (`guards.test.sh`) plus behavioral pressure-test scenarios for the core skills. |
+| **Adapters** | [`adapters/`](adapters/) | Native normalization and outcome mapping for Claude Code, Codex, and OpenCode; Zed/ACP inherits whichever backing runtime it hosts. |
+| **Evals** | [`evals/`](evals/) | Guard and cross-runtime conformance tests plus an isolated, N-run eval lab with deterministic trajectory grading and optional semantic judging. |
 | **Optional modules** | [`modules/`](modules/) | Opt-in batteries the core never depends on: the AIOS CLI (loop engineering + Team Brain), agentic-maturity self-assessment, cost monitoring, context-hygiene monitoring. |
-| **Docs** | [`docs/`](docs/) | [Adopt on any stack](docs/adopt-any-stack.md) · [The autonomy ladder](docs/autonomy-ladder.md) (how a team rolls this out *safely*) · [Thin spots](docs/thin-spots.md). |
+| **Docs** | [`docs/`](docs/) | [Adopt on any stack](docs/adopt-any-stack.md) · [The autonomy ladder](docs/autonomy-ladder.md) · [Runtime conformance](docs/runtime-conformance.md) · [Thin spots](docs/thin-spots.md). |
 
 ## The maturity model behind it
 
@@ -62,7 +61,8 @@ autonomy — you earn it through verification.** See
 git clone <this-repo> .harness   # or vendor the directories you want
 cp -r .harness/skills .claude/skills
 cp -r .harness/agents .claude/agents
-cp -r .harness/hooks .harness-hooks && chmod +x .harness-hooks/*.sh
+chmod +x .harness/hooks/*.sh .harness/adapters/run-hook.sh \
+  .harness/adapters/claude-code/normalize.sh
 # merge .harness/adapters/claude-code/settings.json into .claude/settings.json
 cp .harness/AGENTS.md ./AGENTS.md          # then fill in the TODOs for your stack
 cp .harness/CONSTITUTION.md ./CONSTITUTION.md
@@ -74,9 +74,9 @@ opencode/Codex paths): [docs/adopt-any-stack.md](docs/adopt-any-stack.md).
 
 ## Design principles
 
-1. **Portable over powerful.** Components are markdown + POSIX shell targeting the shared
-   standards (AGENTS.md, SKILL.md, MCP) — not any one runtime's plugin API. Runtimes
-   churn; the pack survives.
+1. **Portable policy, native adapters.** Policies are markdown + POSIX shell behind a
+   versioned event contract; each runtime owns the smallest adapter needed for its
+   actual lifecycle and payloads.
 2. **Enforcement over instruction.** Anything that must happen every time is a hook, not
    a sentence in a prompt.
 3. **Verification is the value.** Every autonomy increase is paid for with a stronger

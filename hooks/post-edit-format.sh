@@ -1,49 +1,47 @@
-#!/usr/bin/env bash
-# post-edit-format.sh — PostToolUse hook (Write|Edit|MultiEdit)
-#
-# Auto-formats the file the agent just wrote, using whatever formatter the repo
-# already has. Deterministic hygiene the agent never has to think about — and
-# the human never has to nag about. Curated from: Boris Cherny (hooks
-# auto-format after edits). AM pattern: C4.
-#
-# NEVER blocks: always exits 0. Unknown file type or missing formatter = no-op.
+#!/bin/sh
+# Portable post_edit policy. Formatting is best-effort and never blocks.
+set -u
 
-set -uo pipefail
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+INPUT=$(cat 2>/dev/null || true)
+EVENT=$(printf '%s' "$INPUT" | "$SCRIPT_DIR/prepare-event.sh" post_edit)
+STATUS=$?
+[ "$STATUS" -eq 4 ] && exit 0
+[ "$STATUS" -eq 0 ] || exit 3
+command -v jq >/dev/null 2>&1 || exit 3
 
-STDIN_JSON=$(cat 2>/dev/null || true)
-[ -z "$STDIN_JSON" ] && exit 0
-command -v jq >/dev/null 2>&1 || exit 0
+CWD=$(printf '%s' "$EVENT" | jq -r '.cwd') || exit 3
+REPO_ROOT=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$CWD")
+FILE_PATHS=$(printf '%s' "$EVENT" | jq -r '.paths[] | select(.action != "delete") | .path' | awk 'NF && !seen[$0]++') || exit 3
+[ -n "$FILE_PATHS" ] || exit 0
 
-FILE_PATH=$(printf '%s' "$STDIN_JSON" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null || true)
-[ -n "$FILE_PATH" ] && [ -f "$FILE_PATH" ] || exit 0
-
-has_local() { [ -x "./node_modules/.bin/$1" ]; }
-run_prettier() {
-  if has_local prettier; then ./node_modules/.bin/prettier --write "$FILE_PATH" >/dev/null 2>&1
-  elif command -v prettier >/dev/null 2>&1; then prettier --write "$FILE_PATH" >/dev/null 2>&1
-  fi
-}
-
-case "$FILE_PATH" in
-  *.js|*.jsx|*.ts|*.tsx|*.mjs|*.cjs|*.json|*.css|*.scss|*.md|*.html|*.vue|*.svelte|*.yaml|*.yml)
-    run_prettier || true
-    ;;
-  *.py)
-    if command -v ruff >/dev/null 2>&1; then ruff format "$FILE_PATH" >/dev/null 2>&1 || true
-    elif command -v black >/dev/null 2>&1; then black -q "$FILE_PATH" >/dev/null 2>&1 || true
-    fi
-    ;;
-  *.php)
-    if [ -x "./vendor/bin/pint" ]; then ./vendor/bin/pint "$FILE_PATH" >/dev/null 2>&1 || true
-    elif [ -x "./vendor/bin/php-cs-fixer" ]; then ./vendor/bin/php-cs-fixer fix "$FILE_PATH" >/dev/null 2>&1 || true
-    fi
-    ;;
-  *.go)
-    command -v gofmt >/dev/null 2>&1 && gofmt -w "$FILE_PATH" >/dev/null 2>&1 || true
-    ;;
-  *.rs)
-    command -v rustfmt >/dev/null 2>&1 && rustfmt "$FILE_PATH" >/dev/null 2>&1 || true
-    ;;
-esac
+while IFS= read -r FILE_PATH || [ -n "$FILE_PATH" ]; do
+  [ -n "$FILE_PATH" ] || continue
+  case "$FILE_PATH" in /*) ABS_PATH=$FILE_PATH ;; *) ABS_PATH="$CWD/$FILE_PATH" ;; esac
+  [ -f "$ABS_PATH" ] || continue
+  case "$ABS_PATH" in
+    *.js|*.jsx|*.ts|*.tsx|*.mjs|*.cjs|*.json|*.css|*.scss|*.md|*.html|*.vue|*.svelte|*.yaml|*.yml)
+      if [ -x "$REPO_ROOT/node_modules/.bin/prettier" ]; then
+        "$REPO_ROOT/node_modules/.bin/prettier" --write "$ABS_PATH" >/dev/null 2>&1 || true
+      elif command -v prettier >/dev/null 2>&1; then
+        prettier --write "$ABS_PATH" >/dev/null 2>&1 || true
+      fi
+      ;;
+    *.py)
+      if command -v ruff >/dev/null 2>&1; then ruff format "$ABS_PATH" >/dev/null 2>&1 || true
+      elif command -v black >/dev/null 2>&1; then black -q "$ABS_PATH" >/dev/null 2>&1 || true
+      fi
+      ;;
+    *.php)
+      if [ -x "$REPO_ROOT/vendor/bin/pint" ]; then "$REPO_ROOT/vendor/bin/pint" "$ABS_PATH" >/dev/null 2>&1 || true
+      elif [ -x "$REPO_ROOT/vendor/bin/php-cs-fixer" ]; then "$REPO_ROOT/vendor/bin/php-cs-fixer" fix "$ABS_PATH" >/dev/null 2>&1 || true
+      fi
+      ;;
+    *.go) command -v gofmt >/dev/null 2>&1 && gofmt -w "$ABS_PATH" >/dev/null 2>&1 || true ;;
+    *.rs) command -v rustfmt >/dev/null 2>&1 && rustfmt "$ABS_PATH" >/dev/null 2>&1 || true ;;
+  esac
+done <<EOF
+$FILE_PATHS
+EOF
 
 exit 0

@@ -36,14 +36,14 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash .harness/hooks/guard-secrets.sh" },
-          { "type": "command", "command": "bash .harness/hooks/guard-protected-paths.sh" }
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code pre_edit guard-secrets.sh" },
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code pre_edit guard-protected-paths.sh" }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "bash .harness/hooks/guard-destructive.sh" }
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code pre_command guard-destructive.sh" }
         ]
       }
     ],
@@ -51,14 +51,14 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash .harness/hooks/post-edit-format.sh" }
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code post_edit post-edit-format.sh" }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "bash .harness/hooks/stop-verify-gate.sh" }
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code stop stop-verify-gate.sh" }
         ]
       }
     ]
