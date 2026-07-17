@@ -11,18 +11,19 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
   running in production in the AIOS toolkit and from disler's hook repos), but these
   specific scripts have unit-level testing only (synthetic payloads), not months of
   field time. Expect to tune the destructive-command regexes to your team's habits.
-- **The opencode and Codex adapters are mappings, not shipped installs.** The
-  Claude Code adapter is the reference path; the other two document how the pieces map
-  and include starter config, but haven't been run end-to-end on a real team repo.
+- **The adapters are conformance-tested, not mature field infrastructure.** Claude
+  Code, Codex, and OpenCode now ship working native adapters and fixtures. Local CLI
+  loading and adversarial smoke evidence does not substitute for sustained team use,
+  managed deployment, or cross-version testing.
 - **`models/routing.yaml` is a convention, not an engine.** Nothing enforces the lane
   policy mechanically yet — MG6 (bulk output needs frontier review) is enforced by
   rubric + process. The category-routing pattern it encodes is proven elsewhere
   (oh-my-opencode, Amp); our YAML contract for it is new.
-- **Evals exist but are young.** [`evals/`](../evals/) now ships a deterministic
-  42-case guard battery (it has already caught two real hook bugs) and behavioral
-  pressure-test scenarios for the core skills — but scenarios run manually, with no
-  pass-rate tracking over time yet. Layer 3 (automation, skill-trigger evals, lane
-  economics measurement) is the gap; see `evals/README.md`.
+- **The eval lab is a validation tool, not a benchmark.** It automates isolated
+  N-run scenarios, trajectory grading, summaries, and optional semantic judging.
+  Five scenarios—including clean/P1 review calibration and red/green simplification
+  variants—are still far too small for model comparisons, and live proof runs only
+  validate the lab/runtime path used on that date.
 
 ## Deferred (deliberately not in v0)
 
@@ -51,14 +52,16 @@ patterns came from, and we tell you where ours haven't been pressure-tested yet.
 
 ## Known trade-offs
 
-- **Hooks require `bash` + `jq`** and fail *open* (with a stderr note) when `jq` is
-  missing — chosen so a missing dependency can't brick a session, at the cost that a
-  stripped environment silently loses guard coverage. Check your environment once:
-  `command -v jq`.
-- **The stop-verify-gate allows the stop on the second consecutive failure** (loop
-  protection) — an agent can still end a session with a red check, but only after the
-  failure output is in the transcript twice and flagged "do not report as done."
-- **Portability over power.** By targeting the shared standards we forgo
-  runtime-specific strengths (Claude Code plugins/marketplaces, opencode's TS plugin
-  depth, Codex's kernel sandbox as policy). The adapters note where each runtime can
-  do better than the portable baseline.
+- **Shell adapters require a POSIX shell + `jq`.** Safety normalization or policy
+  failure maps to a block; formatting stays non-blocking. A stripped environment can
+  therefore stop edits/commands until its dependency issue is fixed.
+- **The stop gate allows a stop after one continuation** to prevent recursion. Claude
+  Code and Codex use native Stop behavior; OpenCode uses weaker `session.idle` prompt
+  injection. A red session can still end for human review and must not be reported as
+  complete.
+- **No hook is the outer security boundary.** Runtime sandboxing/permissions, managed
+  policy, review, and CI must enforce organization-critical controls even when local
+  hooks are unavailable or bypassed.
+- **Portable policy still needs native code.** Claude/Codex normalize in shell while
+  OpenCode requires a TypeScript plugin. The protocol reduces policy duplication; it
+  does not erase runtime churn or make lifecycle strength identical.

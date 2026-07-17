@@ -1,17 +1,15 @@
 # Adapter — Zed (via ACP)
 
-[Zed](https://zed.dev) is the cleanest way to run this harness *inside an editor*
-without changing the harness at all. Zed's [Agent Client Protocol (ACP)](https://zed.dev/acp)
-makes the editor a thin client: Zed hosts the thread UI, and the **external agent keeps
-its own runtime, auth, model, tools — and therefore this pack's skills, hooks, and
-settings**. You are not adopting a new harness; you're giving your existing one an
-editor surface.
+[Zed](https://zed.dev) can host this harness *inside an editor* through its
+[Agent Client Protocol (ACP)](https://zed.dev/acp). Zed is a client surface, not an
+independent hook implementation: lifecycle coverage and enforcement strength are
+inherited from the configured backing runtime.
 
 ## Why this combination is interesting
 
-- **The harness travels with the agent, not the editor.** Run Claude Code as Zed's
-  external agent and everything in this pack applies unchanged — guards still block,
-  skills still fire, the stop-gate still gates. Zero porting.
+- **The harness travels with the agent, not the editor.** A configured Claude Code,
+  Codex, or OpenCode adapter applies unchanged. Zed itself does not strengthen a
+  weaker runtime lifecycle.
 - **Agent following:** Zed's crosshair mode jumps the editor to each file the agent
   reads/edits — a cheap, high-trust supervision affordance for engineers on rungs 1–2
   of the [autonomy ladder](../../docs/autonomy-ladder.md) (you *see* what it touches).
@@ -55,7 +53,7 @@ editor surface.
 
   (Same lane discipline as everywhere: bulk-lane sessions get frontier review before
   merge — rubric MG6.)
-- Hooks execute in the agent's process, exactly as in the terminal. The only
+- When supported by the backing runtime, hooks execute in its process. The only
   Claude-Code feature without a Zed surface today is interactive plan-mode toggling —
   drive it with `/plan-first` + explicit instructions instead.
 

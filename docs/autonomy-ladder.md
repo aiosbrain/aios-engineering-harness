@@ -25,7 +25,9 @@ Movement rules:
   entry: what guard would have caught it?).
 - **Irreversible actions never climb.** Deploys, migrations on real data, force-pushes,
   external communications stay human-approved at every rung. The `guard-destructive`
-  hook encodes the floor.
+  hook encodes the floor conservatively: every plain `git push --force`/`git push -f`
+  is blocked, including feature branches. `--force-with-lease` remains available;
+  `HARNESS_ALLOW_DESTRUCTIVE=1` is the explicit-approval escape hatch.
 
 ## The isolation ladder (runs alongside)
 

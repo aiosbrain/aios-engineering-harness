@@ -16,14 +16,14 @@
       "mode": "subagent",
       "model": "anthropic/claude-opus",
       "prompt": "{file:./.harness/agents/code-reviewer.md}",
-      "tools": { "write": false, "edit": false }
+      "permission": { "edit": "deny" }
     },
     "verifier": {
       "$comment": "adversarial verifier — mirror of agents/adversarial-verifier.md",
       "mode": "subagent",
       "model": "anthropic/claude-opus",
       "prompt": "{file:./.harness/agents/adversarial-verifier.md}",
-      "tools": { "write": false, "edit": false }
+      "permission": { "edit": "deny" }
     }
   },
   "permission": {

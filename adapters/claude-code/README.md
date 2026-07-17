@@ -12,7 +12,8 @@ cp -r .harness/skills/* .claude/skills/
 cp .harness/agents/*.md .claude/agents/
 
 # 3. Hooks: make executable, then merge settings.json
-chmod +x .harness/hooks/*.sh
+chmod +x .harness/hooks/*.sh .harness/adapters/run-hook.sh \
+  .harness/adapters/claude-code/normalize.sh
 # merge adapters/claude-code/settings.json into .claude/settings.json
 # (keys: permissions.allow/deny, hooks.PreToolUse/PostToolUse/Stop)
 
@@ -24,7 +25,14 @@ cp .harness/CONSTITUTION.md ./CONSTITUTION.md
 printf 'make lint && make test\n' > .harness/check   # your repo's real check command
 ```
 
-Requirements: `bash`, `jq` (hooks fail open with a stderr note if `jq` is missing).
+Requirements: POSIX shell and `jq`. Safety adapter/configuration failures map to a
+block; post-edit formatting remains non-blocking.
+
+The adapter accepts Claude Code's native `PreToolUse`, `PostToolUse`, and `Stop`
+payloads and emits protocol `1.0` events. Direct Claude-shaped input to the old hook
+paths remains available for the v0 migration window, but new installs use the adapter.
+See the [runtime matrix](../../docs/runtime-conformance.md) and Claude Code's primary
+[hooks reference](https://code.claude.com/docs/en/hooks).
 
 ## Constitution digest injection
 

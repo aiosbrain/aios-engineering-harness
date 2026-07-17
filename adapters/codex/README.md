@@ -1,30 +1,38 @@
-# Adapter — OpenAI Codex CLI
+# Adapter — OpenAI Codex
 
-Codex CLI reads the same portable surfaces this pack is built on.
+> Last verified with Codex CLI 0.144.5 on 2026-07-17.
 
-## What maps directly
+Install the portable pack and native lifecycle wiring:
 
-| Pack component | Codex equivalent |
-|---|---|
-| `AGENTS.md` | native — repo root `AGENTS.md` (plus `~/.codex/AGENTS.md` global) |
-| `CONSTITUTION.md` | reference it from `AGENTS.md` ("read CONSTITUTION.md's agent-digest before any task") |
-| `skills/` | Codex skills — same `SKILL.md` shape; install under `~/.agents/skills/` (user) or the repo's skills dir |
-| `agents/*.md` | Codex subagents (TOML-defined) — port the markdown body as the subagent's instructions |
-| `models/routing.yaml` | `model`/profile config; Codex profiles per lane |
+```bash
+git clone <this-repo> .harness && rm -rf .harness/.git
+mkdir -p .agents/skills .codex
+cp -R .harness/skills/. .agents/skills/
+cp .harness/adapters/codex/hooks.json .codex/hooks.json
+cp .harness/AGENTS.md ./AGENTS.md
+```
 
-## What Codex gives you for free
+Codex project hooks require a trusted project and explicit review of changed hook
+definitions. Inspect them with `/hooks`. Requirements: POSIX shell and `jq`.
 
-- **OS-level sandboxing** (Seatbelt on macOS, Bubblewrap on Linux): file-write and
-  network constraints enforced by the kernel, with an approval flow to cross the
-  boundary. This overlaps with `guard-destructive.sh` / `guard-protected-paths.sh` —
-  keep the sandbox as the outer wall and treat the pack's guards as the portable,
-  fine-grained layer (they express *repo policy*, not just isolation).
+The adapter owns Codex payload interpretation. It parses all `apply_patch` file
+headers, rename destinations, and added lines, then sends protocol `1.0` JSON to the
+portable policies. Secret scanning sees added lines only, so removing leaked material
+is allowed. Safety normalization failure maps to exit 2; formatter failure maps to
+allow. `HARNESS_TRACE_FILE` is available only as an opt-in eval artifact.
 
-## What doesn't map yet
+Codex's sandbox and approval policy remain the outer capability boundary. Hooks give
+specific repository-policy feedback but are not a replacement for OS isolation,
+managed requirements, or CI. Project hooks can also be skipped until trust is granted.
 
-- The Stop-hook verify gate has no direct Codex equivalent — encode the same rule as
-  process instead: the final instruction of every task prompt is "run `<check>`; if it
-  fails you are not done." Weaker than a hook (advisory, not guaranteed); note it in
-  your rollout as a known gap.
-- `post-edit-format.sh` → rely on your formatter's pre-commit hook instead
-  (`pre-commit`, husky, lefthook) — which is good practice on every runtime anyway.
+Run before rollout:
+
+```bash
+bash .harness/evals/guards.test.sh
+bash .harness/evals/conformance.test.sh
+```
+
+Primary sources: [hooks](https://developers.openai.com/codex/hooks),
+[sandboxing and approvals](https://developers.openai.com/codex/security),
+[skills](https://developers.openai.com/codex/skills), and
+[`AGENTS.md`](https://developers.openai.com/codex/guides/agents-md).

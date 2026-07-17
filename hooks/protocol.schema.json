@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiosbrain.dev/harness/hook-event/1.0/schema.json",
+  "title": "AIOS Harness normalized hook event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "event", "runtime", "cwd"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "event": {
+      "enum": ["pre_edit", "pre_command", "post_edit", "stop"]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "enum": ["claude", "codex", "opencode", "mock"] },
+        "version": { "type": "string" }
+      }
+    },
+    "cwd": { "type": "string", "minLength": 1 },
+    "session_id": { "type": "string" },
+    "tool_name": { "type": "string" },
+    "tool_id": { "type": "string" },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "action"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "action": {
+            "enum": ["add", "update", "delete", "rename", "unknown"]
+          },
+          "from": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "added_content": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "content"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "command": { "type": "string", "minLength": 1 },
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification_loop_active"],
+      "properties": {
+        "verification_loop_active": { "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "pre_edit" } } },
+      "then": { "required": ["paths", "added_content"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "pre_command" } } },
+      "then": { "required": ["command"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "post_edit" } } },
+      "then": { "required": ["paths"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "stop" } } },
+      "then": { "required": ["stop"] }
+    }
+  ]
+}
