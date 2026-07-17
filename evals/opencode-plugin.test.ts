@@ -52,6 +52,18 @@ describe("OpenCode adapter normalization", () => {
     expect(event.added_content?.map((item) => item.content)).toEqual(["new", "second"])
   })
 
+  test("rejects orphan patch renames", () => {
+    const patch = "*** Begin Patch\n*** Move to: src/new.ts\n+content\n*** End Patch"
+    expect(() =>
+      normalizeToolEvent(
+        "pre_edit",
+        { tool: "apply_patch", sessionID: "s1", callID: "c1" },
+        { patchText: patch },
+        "/work",
+      ),
+    ).toThrow("no source or destination")
+  })
+
   test("normalizes command and stop loop state", () => {
     const command = normalizeToolEvent(
       "pre_command",
@@ -170,7 +182,7 @@ describe("OpenCode adapter normalization", () => {
     await expect(Bun.file(log).text()).resolves.toContain("src/b.ts")
   })
 
-  test("session.idle injects one continuation and then stops looping", async () => {
+  test("session.idle injects one continuation and fails closed if the retry stays red", async () => {
     const root = resolve(import.meta.dir, "..")
     const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))
     temporary.push(workspace)
@@ -185,7 +197,7 @@ describe("OpenCode adapter normalization", () => {
     } as never)
     const idle = { event: { type: "session.idle", properties: { sessionID: "s1" } } } as never
     await plugin.event?.(idle)
-    await plugin.event?.(idle)
+    await expect(plugin.event?.(idle)).rejects.toThrow("check is failing")
     expect(prompts).toBe(1)
   })
 })

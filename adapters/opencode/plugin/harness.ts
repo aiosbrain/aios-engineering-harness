@@ -4,12 +4,15 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { normalizeStopEvent, normalizeToolEvent, type NormalizedEvent } from "../normalize"
 
+const HOOK_TIMEOUT_MS = 10_000
+
 function runScript(root: string, script: string, event: NormalizedEvent) {
   const result = spawnSync("/bin/sh", [join(root, "hooks", script)], {
     cwd: event.cwd,
     input: JSON.stringify(event),
     encoding: "utf8",
     env: process.env,
+    timeout: HOOK_TIMEOUT_MS,
   })
   return {
     status: result.status ?? 3,
@@ -24,6 +27,7 @@ function trace(root: string, policy: string, event: NormalizedEvent, outcome: nu
     input: JSON.stringify(event),
     encoding: "utf8",
     env: process.env,
+    timeout: HOOK_TIMEOUT_MS,
   })
   return result.status ?? 3
 }
@@ -80,7 +84,10 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
       if (event.type !== "session.idle") return
       const sessionID = event.properties.sessionID
       const loop = continued.has(sessionID)
-      const normalized = normalizeStopEvent(directory, sessionID, loop)
+      // The second idle event is the terminal verification attempt. Do not pass
+      // the recursion flag to the hook, because that flag intentionally skips
+      // verification and would turn a still-red check into a false success.
+      const normalized = normalizeStopEvent(directory, sessionID, false)
       const result = runScript(root, "stop-verify-gate.sh", normalized)
       const traceStatus = trace(root, "stop-verify-gate.sh", normalized, result.status)
 
@@ -90,7 +97,13 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
       }
       if (loop) {
         continued.delete(sessionID)
-        return
+        const reason =
+          traceStatus !== 0
+            ? "The harness verification trace still could not be recorded after one continuation."
+            : result.status === 2
+              ? result.reason || "The harness verification gate is still red after one continuation."
+              : result.reason || "The harness verification gate still could not be evaluated after one continuation."
+        throw new Error(reason)
       }
 
       continued.add(sessionID)

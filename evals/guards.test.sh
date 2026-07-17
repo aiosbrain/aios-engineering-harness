@@ -87,6 +87,7 @@ bjson() { jq -cn --arg c "$1" '{tool_input:{command:$c}}'; }
 echo "── guard-destructive ──────────────────────────────────────"
 t "blocks rm -rf / (with args)"  2 "$H/guard-destructive.sh" "$(bjson 'rm -rf / --no-preserve-root')"
 t "blocks rm -rf / (bare)"       2 "$H/guard-destructive.sh" "$(bjson 'rm -rf /')"
+t "blocks rm -rf -- /"            2 "$H/guard-destructive.sh" "$(bjson 'rm -rf -- /')"
 t "blocks rm -rf absolute path"  2 "$H/guard-destructive.sh" "$(bjson 'rm -rf /tmp/x')"
 t "blocks rm -rf ~"              2 "$H/guard-destructive.sh" "$(bjson 'rm -rf ~/Projects')"
 t "blocks rm -rf .."             2 "$H/guard-destructive.sh" "$(bjson 'rm -rf ../other-repo')"

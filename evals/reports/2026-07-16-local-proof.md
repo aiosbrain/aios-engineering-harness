@@ -80,3 +80,15 @@ results above, and no paid model run was performed for this follow-up.
 - Installed runtime configuration smoke: 3/3; paid/live mode was not used.
 - ShellCheck at error severity, shell syntax, JSON parsing, Python compilation,
   `git diff --check`, and Gitleaks: pass; no leaks found.
+
+## Residual CodeRabbit follow-up — 2026-07-17
+
+The remaining material residuals were addressed in a second deterministic follow-up:
+
+- OpenCode hook and trace subprocesses now have a finite timeout. A second idle event
+  performs a real terminal verification and fails closed when the check or trace still
+  fails; it cannot be treated as a successful completion.
+- Codex and OpenCode patch normalizers reject orphan `Move to:` headers without a
+  source (or with an empty destination).
+- The destructive guard blocks `rm -rf -- /` and equivalent separator forms.
+- OpenCode plugin tests: 10/10; conformance: 27/27; guards: 53/53.

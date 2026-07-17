@@ -73,6 +73,9 @@ pipe_status "Codex secret added line blocked" 2 "$CODEX_PATCH" "$ADAPTER" codex 
 REMOVE_PATCH=$'*** Begin Patch\n*** Update File: src/secret.ts\n@@\n-key='"$AWS_KEY"$'\n+key=$API_KEY\n*** End Patch'
 CODEX_REMOVE=$(fixture "$ROOT/evals/fixtures/native/codex/apply-patch.json" "$TMP" "$REMOVE_PATCH")
 pipe_status "Codex secret removal allowed" 0 "$CODEX_REMOVE" "$ADAPTER" codex pre_edit guard-secrets.sh
+ORPHAN_PATCH=$'*** Begin Patch\n*** Move to: src/orphan.ts\n+content\n*** End Patch'
+ORPHAN_PAYLOAD=$(fixture "$ROOT/evals/fixtures/native/codex/apply-patch.json" "$TMP" "$ORPHAN_PATCH")
+pipe_status "Codex orphan rename rejected" 3 "$ORPHAN_PAYLOAD" "$ROOT/adapters/codex/normalize.sh" pre_edit
 CODEX_SAFE_CMD=$(fixture "$ROOT/evals/fixtures/native/codex/bash.json" "$TMP/nested" "git status")
 pipe_status "Codex safe command allowed" 0 "$CODEX_SAFE_CMD" "$ADAPTER" codex pre_command guard-destructive.sh
 CODEX_BAD_CMD=$(fixture "$ROOT/evals/fixtures/native/codex/bash.json" "$TMP" "rm -rf /")

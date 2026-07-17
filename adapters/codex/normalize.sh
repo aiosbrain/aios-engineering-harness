@@ -25,8 +25,12 @@ case "$EVENT" in
             .paths += [{path:$h.path, action:($h.kind | ascii_downcase)}]
           elif ($line | test("^\\*\\*\\* Move to: ")) then
             ($line | capture("^\\*\\*\\* Move to: (?<path>.*)$").path) as $to |
-            .paths = ((.paths[0:-1]) + [{path:$to, action:"rename", from:.current}]) |
-            .current = $to
+            if (($to == "") or (.current == "") or ((.paths | length) == 0)) then
+              error("codex patch rename has no source or destination")
+            else
+              .paths = ((.paths[0:-1]) + [{path:$to, action:"rename", from:.current}]) |
+              .current = $to
+            end
           elif ($line | startswith("+")) and (($line | startswith("+++")) | not) then
             .added_content += [{path:(if .current == "" then "<unknown>" else .current end), content:$line[1:]}]
           else . end

@@ -26,7 +26,7 @@ block() {
 }
 
 if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])rm[[:space:]]+(-[a-zA-Z]*[rR][a-zA-Z]*f[a-zA-Z]*|-[a-zA-Z]*f[a-zA-Z]*[rR][a-zA-Z]*)[[:space:]]'; then
-  if printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*[[:space:]]+("?/([^/]|$)|"?~|\$HOME|\.\.)'; then
+  if printf '%s' "$CMD" | grep -qE 'rm[[:space:]]+-[a-zA-Z]*[[:space:]]+(--[[:space:]]+)?("?/([^/]|$)|"?~|\$HOME|\.\.)'; then
     block "recursive force-delete outside the repository" \
       "rm -rf against /, ~, \$HOME, or .. requires explicit human approval."
   fi

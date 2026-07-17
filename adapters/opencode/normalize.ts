@@ -37,6 +37,7 @@ function parsePatch(patch: string) {
     }
     const move = line.match(/^\*\*\* Move to: (.*)$/)
     if (move) {
+      if (!current || !move[1]) throw new Error("OpenCode patch rename has no source or destination")
       const from = current
       current = move[1]
       paths.splice(paths.length - 1, 1, { path: current, action: "rename", from })
