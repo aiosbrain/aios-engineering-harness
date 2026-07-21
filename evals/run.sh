@@ -46,7 +46,11 @@ mkdir -p "$RESULTS_DIR" "$ROOT/evals/scratch"
 RESULTS_DIR=$(cd "$RESULTS_DIR" && pwd)
 
 if [ "$SCENARIO" = all ]; then
-  SCENARIOS=(tdd-under-deadline simplify-red-baseline simplify-green-baseline review-honesty-clean-diff review-honesty-real-p1)
+  SCENARIOS=()
+  for MANIFEST in "$ROOT"/evals/scenarios/*/manifest.json; do
+    [ -f "$MANIFEST" ] || continue
+    SCENARIOS+=("$(basename "$(dirname "$MANIFEST")")")
+  done
 else
   SCENARIOS=("$SCENARIO")
 fi

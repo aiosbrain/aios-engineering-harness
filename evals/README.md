@@ -3,6 +3,11 @@
 The lab checks policy conformance and agent trajectories without turning runtime smoke
 runs into a model leaderboard.
 
+This lab's core (`run.sh`, `judge.sh`, `lib/exec_timeout.py`, `lib/normalize_transcript.py`,
+`drivers/{claude,codex,opencode}.sh`) is designed to be vendored by other repos that want
+the same scenario/grading contract for a different domain — see [`CONTRACT.md`](CONTRACT.md)
+for exactly what's shared vs. repo-specific.
+
 ## Deterministic floors
 
 ```bash
