@@ -43,7 +43,12 @@ EXPECTED_TOTAL=0
 for MANIFEST in "$ROOT"/evals/scenarios/*/manifest.json; do
   [ -f "$MANIFEST" ] || continue
   SCENARIO_DIR_CHECK=$(dirname "$MANIFEST")
-  if [ -x "$SCENARIO_DIR_CHECK/setup.sh" ] && [ -x "$SCENARIO_DIR_CHECK/grade.sh" ] && [ -f "$SCENARIO_DIR_CHECK/prompt.md" ]; then
+  # Mirrors run.sh's own --scenario all completeness gate exactly (including the
+  # rubric.md-required-when-semantic_required clause) so this count can never
+  # diverge from what run.sh actually decides to include.
+  SCENARIO_SEMANTIC=$(jq -r '.semantic_required // false' "$MANIFEST" 2>/dev/null || echo false)
+  if [ -x "$SCENARIO_DIR_CHECK/setup.sh" ] && [ -x "$SCENARIO_DIR_CHECK/grade.sh" ] && [ -f "$SCENARIO_DIR_CHECK/prompt.md" ] \
+    && { [ "$SCENARIO_SEMANTIC" != true ] || [ -f "$SCENARIO_DIR_CHECK/rubric.md" ]; }; then
     EXPECTED_TOTAL=$((EXPECTED_TOTAL+1))
   fi
 done
