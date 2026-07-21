@@ -15,8 +15,14 @@ record shapes:
 - `run.sh` — orchestration loop (setup → install → drive → normalize → grade → judge →
   aggregate). Scenario discovery for `--scenario all` is automatic (`scenarios/*/manifest.json`),
   so a consumer never has to edit this file just to register a new scenario.
-- `judge.sh`, `judge.schema.json` — fresh-session LLM judge against a scenario's
-  `rubric.md`; defaults to `needs_review`, never a silent pass.
+- `judge.sh`'s **live-judge path** (`--judge <runtime>`, not mock), `judge.schema.json` —
+  fresh-session LLM judge against a scenario's `rubric.md`; defaults to `needs_review`,
+  never a silent pass. Note: `judge.sh`'s **mock-mode branch** is a hardcoded
+  `case "$(basename "$SCENARIO_DIR")"` keyed to this repo's own two semantic scenarios —
+  that branch is NOT domain-agnostic despite living in an otherwise-core file. A
+  consumer vendoring `judge.sh` must append its own scenario cases to that switch
+  locally after syncing (see `aios-workspace/evals/README.md` for how it tracks this as
+  a deliberate post-sync local diff, not something the next sync silently clobbers).
 - `lib/exec_timeout.py` — timeout-wrapped subprocess exec with captured stdout/stderr.
 - `lib/normalize_transcript.py` — runtime-specific transcript → generic `events.jsonl`.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
