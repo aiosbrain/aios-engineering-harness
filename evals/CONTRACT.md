@@ -13,16 +13,19 @@ the `HARNESS_*` env vars, a scenario's `manifest.json`, and generic driver/grade
 record shapes:
 
 - `run.sh` — orchestration loop (setup → install → drive → normalize → grade → judge →
-  aggregate). Scenario discovery for `--scenario all` is automatic (`scenarios/*/manifest.json`),
-  so a consumer never has to edit this file just to register a new scenario.
-- `judge.sh`'s **live-judge path** (`--judge <runtime>`, not mock), `judge.schema.json` —
-  fresh-session LLM judge against a scenario's `rubric.md`; defaults to `needs_review`,
-  never a silent pass. Note: `judge.sh`'s **mock-mode branch** is a hardcoded
-  `case "$(basename "$SCENARIO_DIR")"` keyed to this repo's own two semantic scenarios —
-  that branch is NOT domain-agnostic despite living in an otherwise-core file. A
-  consumer vendoring `judge.sh` must append its own scenario cases to that switch
-  locally after syncing (see `aios-workspace/evals/README.md` for how it tracks this as
-  a deliberate post-sync local diff, not something the next sync silently clobbers).
+  aggregate). Scenario discovery for `--scenario all` is automatic
+  (`scenarios/*/manifest.json`, skipping any directory missing an executable
+  `setup.sh`/`grade.sh` or a `prompt.md` so a WIP scenario never gets silently run), so a
+  consumer never has to edit this file just to register a new scenario. Also enforces a
+  scenario's `forbidden_paths` (fails the run if any changed path matches).
+- `judge.sh` in full, including its mock-mode dispatch, `judge.schema.json` — fresh-session
+  LLM judge against a scenario's `rubric.md`; defaults to `needs_review`, never a silent
+  pass. The mock-mode path is fully domain-agnostic: it looks for an executable
+  `mock-judge.sh` inside the scenario's own directory (`$SCENARIO_DIR/mock-judge.sh`,
+  receiving the artifact path as `$1`, printing `{"status":...,"reason":...}` on stdout)
+  and fails closed if absent. Because that per-scenario logic lives under `scenarios/`
+  (never synced — see Adapter points below), re-syncing `judge.sh` verbatim can never
+  clobber a consumer's own mock rubrics.
 - `lib/exec_timeout.py` — timeout-wrapped subprocess exec with captured stdout/stderr.
 - `lib/normalize_transcript.py` — runtime-specific transcript → generic `events.jsonl`.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
@@ -43,8 +46,9 @@ record shapes:
   the lab itself, not the runtimes, so it is inherently scenario-specific and never
   synced — each consumer's mock driver only knows about its own scenarios.
 - **`scenarios/`** — the actual atoms (`manifest.json`, `prompt.md`, `setup.sh`,
-  `grade.sh`, and `rubric.md` when `semantic_required: true`). Fully repo-specific by
-  design; see `evals/README.md` for the shape.
+  `grade.sh`, `mock-judge.sh` when `semantic_required: true` and mock-mode judging is
+  needed, and `rubric.md` for the live judge). Fully repo-specific by design; see
+  `evals/README.md` for the shape.
 
 ## Consuming this lab from another repo
 

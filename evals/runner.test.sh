@@ -38,7 +38,15 @@ fi
 ALL_DIR="$ROOT/evals/results/$STAMP-all"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --judge mock \
   --results-dir "$ALL_DIR" >/dev/null
-if jq -e '.total == 5 and .by_status.pass == 5 and .pass_rate == 1' "$ALL_DIR/summary.json" >/dev/null; then
+EXPECTED_TOTAL=0
+for MANIFEST in "$ROOT"/evals/scenarios/*/manifest.json; do
+  [ -f "$MANIFEST" ] || continue
+  SCENARIO_DIR_CHECK=$(dirname "$MANIFEST")
+  if [ -x "$SCENARIO_DIR_CHECK/setup.sh" ] && [ -x "$SCENARIO_DIR_CHECK/grade.sh" ] && [ -f "$SCENARIO_DIR_CHECK/prompt.md" ]; then
+    EXPECTED_TOTAL=$((EXPECTED_TOTAL+1))
+  fi
+done
+if jq -e --argjson n "$EXPECTED_TOTAL" '.total == $n and .by_status.pass == $n and .pass_rate == 1' "$ALL_DIR/summary.json" >/dev/null; then
   PASS=$((PASS+1)); echo "PASS: aggregate summary"
 else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate summary"
