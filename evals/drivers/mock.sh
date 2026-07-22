@@ -23,6 +23,12 @@ case "$MODE" in
     jq -n --arg t "$TRANSCRIPT" '{runtime:"mock",model:"deterministic",exit_status:1,duration_ms:1,transcript:$t,usage:{tokens:0,cost_usd:0}}' > "$HARNESS_DRIVER_RECORD"
     exit 1
     ;;
+  success) ;;
+  *)
+    echo "mock.sh: unrecognized HARNESS_MOCK_MODE '$MODE'" >&2
+    jq -n '{runtime:"mock",model:"deterministic",exit_status:2,duration_ms:0,usage:{tokens:0,cost_usd:0}}' > "$HARNESS_DRIVER_RECORD"
+    exit 2
+    ;;
 esac
 
 cd "$HARNESS_WORKSPACE" || exit 3

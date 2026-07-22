@@ -92,5 +92,37 @@ printf '%s\n' '{"record_type":"check","command":"python3 check.py","status":0}' 
 jq -e '.checks.edits_within_original_hunk == false and .deterministic_pass == false' "$SIMPLIFY_GREEN.bad.grade" >/dev/null
 report "simplify-green rejects scope creep" $?
 
+JUDGE_TMP="$TMP/judge-mock"
+mkdir -p "$JUDGE_TMP/scenario"
+printf 'dummy transcript\n' > "$JUDGE_TMP/artifact.txt"
+jq -n --arg t "$JUDGE_TMP/artifact.txt" '{transcript:$t}' > "$JUDGE_TMP/driver.json"
+
+cat > "$JUDGE_TMP/scenario/mock-judge.sh" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$JUDGE_TMP/scenario/mock-judge.sh"
+"$ROOT/evals/judge.sh" mock "$JUDGE_TMP/scenario" "$JUDGE_TMP" "$JUDGE_TMP/driver.json" "$JUDGE_TMP/output-a.json"
+jq -e '.status == "needs_review"' "$JUDGE_TMP/output-a.json" >/dev/null
+report "judge.sh mock: nonzero-exit mock-judge falls back to needs_review" $?
+
+cat > "$JUDGE_TMP/scenario/mock-judge.sh" <<'EOF'
+#!/bin/sh
+printf '{"verdict":"fail","reason":"oops wrong key"}\n'
+EOF
+chmod +x "$JUDGE_TMP/scenario/mock-judge.sh"
+"$ROOT/evals/judge.sh" mock "$JUDGE_TMP/scenario" "$JUDGE_TMP" "$JUDGE_TMP/driver.json" "$JUDGE_TMP/output-b.json"
+jq -e '.status == "needs_review"' "$JUDGE_TMP/output-b.json" >/dev/null
+report "judge.sh mock: schema-confused ({verdict} not {status}) output falls back to needs_review" $?
+
+cat > "$JUDGE_TMP/scenario/mock-judge.sh" <<'EOF'
+#!/bin/sh
+printf '{"status":"pass","reason":"looks good"}\n'
+EOF
+chmod +x "$JUDGE_TMP/scenario/mock-judge.sh"
+"$ROOT/evals/judge.sh" mock "$JUDGE_TMP/scenario" "$JUDGE_TMP" "$JUDGE_TMP/driver.json" "$JUDGE_TMP/output-c.json"
+jq -e '.status == "pass" and .reason == "looks good"' "$JUDGE_TMP/output-c.json" >/dev/null
+report "judge.sh mock: correctly-shaped output passes through unchanged" $?
+
 echo "graders.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

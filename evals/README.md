@@ -3,6 +3,11 @@
 The lab checks policy conformance and agent trajectories without turning runtime smoke
 runs into a model leaderboard.
 
+This lab's core (`run.sh`, `judge.sh`, `lib/exec_timeout.py`, `lib/normalize_transcript.py`,
+`drivers/{claude,codex,opencode}.sh`) is designed to be vendored by other repos that want
+the same scenario/grading contract for a different domain — see [`CONTRACT.md`](CONTRACT.md)
+for exactly what's shared vs. repo-specific.
+
 ## Deterministic floors
 
 ```bash
@@ -26,9 +31,10 @@ bash evals/run.sh --runtime <claude|codex|opencode|mock> \
   --runs <n>
 ```
 
-Optional flags include `--model`, `--timeout`, `--results-dir`, `--judge`, and
-`--judge-model`. Credentials come only from the installed runtime; the lab never reads
-or stores credential configuration.
+Optional flags include `--model`, `--timeout`, `--results-dir`, `--judge`,
+`--judge-model`, and `--keep-workspaces` (skip the post-run cleanup of a run's scratch
+workspace — useful when debugging a real, non-mock run). Credentials come only from the
+installed runtime; the lab never reads or stores credential configuration.
 
 Each run creates an isolated temporary Git repository, installs a copy of the harness,
 passes the scenario prompt to a driver, grades deterministic evidence, and emits a run
@@ -59,3 +65,17 @@ The mock driver is deterministic and exists to test the lab. Live results demons
 that adapters and scenarios execute on the installed runtimes. They do not establish
 general model superiority. Redacted local smoke reports may be committed under
 [`evals/reports/`](reports/); raw evidence remains ignored.
+
+## Known limitations (deferred, not this round)
+
+- **`HARNESS_*` env vars are visible to the evaluated agent's own process** (they're
+  inherited transitively through `exec_timeout.py`'s `subprocess.Popen`). An
+  adversarial/reward-hacking agent could in principle detect it's under evaluation and
+  locate the trace file. Closing this fully requires redesigning how each runtime's own
+  hook mechanism receives its config (today `HARNESS_TRACE_FILE`/`HARNESS_ROOT` are read
+  directly from the CLI subprocess's env by `adapters/*/settings.json`/`hooks.json` and
+  the OpenCode plugin) — bigger than a bugfix, tracked as a follow-up.
+- **No CI wiring for the eval lab.** This repo has no `.github/workflows/` at all today;
+  `evals/*.test.sh` and `bash evals/run.sh --runtime mock --scenario all --judge mock`
+  are run by hand. Bootstrapping CI for this repo is a separate project from the eval lab
+  itself.
