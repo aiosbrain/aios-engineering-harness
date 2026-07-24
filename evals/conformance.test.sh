@@ -93,6 +93,12 @@ CURSOR_PROTECTED=$(jq -cn --arg cwd "$TMP" '{tool_name:"Write",tool_input:{file_
 pipe_status "Cursor protected path blocked" 2 "$CURSOR_PROTECTED" "$ADAPTER" cursor pre_edit guard-protected-paths.sh
 CURSOR_EDIT_VIA_EDITS=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Edit",tool_input:{file_path:"c.md",edits:[{old_string:"x",new_string:$k}]},cwd:$cwd}')
 pipe_status "Cursor secret via edits[] blocked" 2 "$CURSOR_EDIT_VIA_EDITS" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_EDIT_NEW_STRING=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Edit",tool_input:{filePath:"alias.md",new_string:$k},cwd:$cwd}')
+pipe_status "Cursor new_string/filePath aliases blocked" 2 "$CURSOR_EDIT_NEW_STRING" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_EDIT_NEW_STRING_CAMEL=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Edit",tool_input:{filePath:"alias.md",newString:$k},cwd:$cwd}')
+pipe_status "Cursor newString alias blocked" 2 "$CURSOR_EDIT_NEW_STRING_CAMEL" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_EDIT_TOP_LEVEL=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Edit",filePath:"alias.md",edits:[{newString:$k}],cwd:$cwd}')
+pipe_status "Cursor top-level content aliases blocked" 2 "$CURSOR_EDIT_TOP_LEVEL" "$ADAPTER" cursor pre_edit guard-secrets.sh
 CURSOR_SAFE_CMD=$(jq -cn --arg cwd "$TMP/nested" '{command:"git status",cwd:$cwd}')
 pipe_status "Cursor safe command allowed" 0 "$CURSOR_SAFE_CMD" "$ADAPTER" cursor pre_command guard-destructive.sh
 CURSOR_BAD_CMD=$(jq -cn --arg cwd "$TMP" '{command:"rm -rf /",cwd:$cwd}')
@@ -106,6 +112,22 @@ if printf '%s' "$STOP_OUT" | jq -e '.followup_message' >/dev/null 2>&1; then
 else
   FAIL=$((FAIL+1)); echo "FAIL: Cursor stop-gate followup_message"
 fi
+printf 'printf "tab\\tcarriage\\ransi\\033[31mred\\033[0m\\n" >&2; exit 1\n' > "$TMP/.harness/check"
+STOP_OUT=$(printf '%s' "$CURSOR_STOP" | CURSOR_PROJECT_DIR="$TMP/nested" /bin/sh "$ROOT/adapters/cursor/stop-gate.sh" 2>/dev/null)
+if printf '%s' "$STOP_OUT" | jq -e '.followup_message | contains("tab")' >/dev/null 2>&1; then
+  PASS=$((PASS+1)); echo "PASS (0): Cursor stop-gate JSON-encodes control characters"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: Cursor stop-gate emitted invalid control-character JSON"
+fi
+for STOP_STATUS in aborted error; do
+  STOP_OUT=$(printf '{"status":"%s","loop_count":0}' "$STOP_STATUS" |
+    CURSOR_PROJECT_DIR="$TMP/nested" /bin/sh "$ROOT/adapters/cursor/stop-gate.sh" 2>/dev/null)
+  if [ "$STOP_OUT" = "{}" ]; then
+    PASS=$((PASS+1)); echo "PASS (0): Cursor $STOP_STATUS stop skips verification continuation"
+  else
+    FAIL=$((FAIL+1)); echo "FAIL: Cursor $STOP_STATUS stop emitted a continuation"
+  fi
+done
 
 echo "failure mapping + tracing + formatting"
 pipe_status "safety adapter blocks malformed payload" 2 '{bad' "$ADAPTER" codex pre_edit guard-secrets.sh

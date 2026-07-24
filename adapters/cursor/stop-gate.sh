@@ -11,13 +11,27 @@ set -u
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 INPUT=$(cat 2>/dev/null || true)
 
+command -v jq >/dev/null 2>&1 || {
+  echo "cursor stop gate: jq not found" >&2
+  exit 3
+}
+
+NATIVE_STATUS=$(printf '%s' "$INPUT" | jq -r '.status // ""' 2>/dev/null || true)
+case "$NATIVE_STATUS" in
+  aborted|error)
+    printf '{}\n'
+    exit 0
+    ;;
+esac
+
 OUT=$(printf '%s' "$INPUT" | "$SCRIPT_DIR/../run-hook.sh" cursor stop stop-verify-gate.sh 2>&1)
 STATUS=$?
 
 if [ "$STATUS" -eq 2 ]; then
   # Blocked: hand the gate's reason back to Cursor as a continuation prompt.
-  msg=$(printf '%s' "$OUT" | tr '\n' ' ' | sed 's/\\/\\\\/g; s/"/\\"/g')
-  [ -n "$msg" ] || msg="Repository verification gate failed; resolve it before stopping."
-  printf '{"followup_message":"%s"}\n' "$msg"
+  [ -n "$OUT" ] || OUT="Repository verification gate failed; resolve it before stopping."
+  printf '%s' "$OUT" | jq -Rs '{followup_message: .}'
+else
+  printf '{}\n'
 fi
 exit 0

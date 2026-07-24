@@ -15,7 +15,7 @@
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor post_edit post-edit-format.sh", "timeout": 120 }
     ],
     "stop": [
-      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/cursor/stop-gate.sh\"", "timeout": 600 }
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/cursor/stop-gate.sh\"", "timeout": 600, "loop_limit": 5 }
     ]
   }
 }

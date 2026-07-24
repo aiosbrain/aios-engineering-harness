@@ -37,8 +37,14 @@ case "$EVENT" in
   pre_edit)
     NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "$CWD_DEFAULT" '
       (.tool_input // {}) as $ti |
-      ($ti.file_path // $ti.path // $ti.target_file // .file_path // "") as $p |
-      ($ti.content // ([$ti.edits[]?.new_string] | join("\n")) // ([.edits[]?.new_string] | join("\n")) // "") as $c |
+      ($ti.file_path // $ti.filePath // $ti.path // $ti.target_file //
+        .file_path // .filePath // "") as $p |
+      ([
+        $ti.content, $ti.new_string, $ti.newString,
+        $ti.edits[]?.new_string, $ti.edits[]?.newString,
+        .content, .new_string, .newString,
+        .edits[]?.new_string, .edits[]?.newString
+      ] | map(select(type == "string" and length > 0)) | join("\n")) as $c |
       {
         protocol_version:"1.0", event:"pre_edit", runtime:{name:"cursor"},
         cwd:(.cwd // $cwd), session_id:(.conversation_id // ""),
