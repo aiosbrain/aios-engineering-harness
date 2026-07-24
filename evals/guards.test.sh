@@ -124,6 +124,8 @@ t "blocks switch -c in primary"       2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git
 t "blocks git branch <new> in primary" 2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git branch newb')"
 t "allows git branch --all (read)"    0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git branch --all')"
 t "allows commit on main in primary"  0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git commit -m x')"
+printf '%s' "$(wpc "$WT" 'git commit -m x')" | HARNESS_PRIMARY_COMMIT_POLICY=strict bash "$H/guard-worktree.sh" >/dev/null 2>&1
+if [ $? = 2 ]; then PASS=$((PASS+1)); echo "PASS (2): strict policy blocks main commit (agent hook)"; else FAIL=$((FAIL+1)); echo "FAIL: strict agent-hook should block main commit"; fi
 t "allows commit inside worktree"     0 "$H/guard-worktree.sh" "$(wpc "$WT/wt" 'git commit -m x')"
 t "allows edit on main in primary"    0 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/a.txt")"
 t "allows edit inside worktree"       0 "$H/guard-worktree.sh" "$(wpe "$WT/wt" "$WT/wt/a.txt")"
@@ -141,6 +143,12 @@ bash "$ROOT/hooks/git/install-primary-commit-guard.sh" "$WT" >/dev/null 2>&1
 if [ $? != 0 ]; then PASS=$((PASS+1)); echo "PASS: pre-commit guard blocks feature commit in primary"; else FAIL=$((FAIL+1)); echo "FAIL: pre-commit guard should block feature commit in primary"; fi
 ( cd "$WT"; HARNESS_ALLOW_PRIMARY_COMMIT=1 git commit -qm feat ) >/dev/null 2>&1
 if [ $? = 0 ]; then PASS=$((PASS+1)); echo "PASS: pre-commit guard override commits"; else FAIL=$((FAIL+1)); echo "FAIL: pre-commit guard override should commit"; fi
+# strict policy: even a commit on the default branch is blocked in the primary
+git -C "$WT" checkout -q main
+( cd "$WT"; echo s >> a.txt; git add a.txt; HARNESS_PRIMARY_COMMIT_POLICY=strict git commit -qm strict-main ) >/dev/null 2>&1
+if [ $? != 0 ]; then PASS=$((PASS+1)); echo "PASS: strict pre-commit blocks main commit in primary"; else FAIL=$((FAIL+1)); echo "FAIL: strict pre-commit should block main commit"; fi
+( cd "$WT"; git commit -qm main-ok ) >/dev/null 2>&1
+if [ $? = 0 ]; then PASS=$((PASS+1)); echo "PASS: default-ok allows main commit in primary"; else FAIL=$((FAIL+1)); echo "FAIL: default-ok should allow main commit"; fi
 rm -rf "$WT"
 
 echo "── stop-verify-gate ───────────────────────────────────────"

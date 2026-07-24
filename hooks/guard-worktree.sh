@@ -101,11 +101,16 @@ if [ "$MODE" = "command" ]; then
     block "creating a branch in the primary checkout (branch '$BRANCH')" \
       "Create feature branches as worktrees, not in the primary checkout."
   fi
-  # Committing a feature branch in the primary checkout (belt-and-suspenders with the git hook).
-  if [ "$BRANCH" != "$DEFAULT_BRANCH" ] &&
-     printf '%s' "$CMD" | grep -qE 'git[[:space:]]+commit([[:space:]]|$)'; then
-    block "committing on non-default branch '$BRANCH' in the primary checkout" \
-      "Feature commits belong in a worktree, never on a branch committed in the primary checkout."
+  # Committing in the primary checkout (belt-and-suspenders with the git hook).
+  # strict policy blocks every branch; default-ok blocks only non-default branches.
+  if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+commit([[:space:]]|$)'; then
+    if [ "${HARNESS_PRIMARY_COMMIT_POLICY:-default-ok}" = "strict" ]; then
+      block "committing in the primary checkout (branch '$BRANCH', strict policy)" \
+        "The primary checkout only advances via \`git merge --ff-only\`; author commits in a worktree."
+    elif [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
+      block "committing on non-default branch '$BRANCH' in the primary checkout" \
+        "Feature commits belong in a worktree, never on a branch committed in the primary checkout."
+    fi
   fi
   exit 0
 fi

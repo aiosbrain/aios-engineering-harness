@@ -8,17 +8,23 @@
 # git hook catches every commit path (manual commits, runtimes without hooks,
 # scripts) regardless of which agent — if any — is driving.
 #
-# A commit is BLOCKED when:
-#   (a) the working copy is the PRIMARY checkout (not a linked worktree), AND
-#   (b) the current branch is NOT the default branch.
+# A commit is BLOCKED when the working copy is the PRIMARY checkout (not a linked
+# worktree) and the policy says so:
+#   default-ok (default) — block only on a NON-default branch (a feature branch
+#                stranded in the primary); commits on the default branch are allowed.
+#   strict               — block EVERY authored commit in the primary, including on
+#                the default branch. The primary then only advances via
+#                `git merge --ff-only` (which moves the ref without creating a commit,
+#                so no pre-commit hook fires); a non-ff merge in the primary IS the
+#                anti-pattern and is blocked too. This matches aios-workspace's rule.
 #
-# It is a NO-OP inside a linked worktree (where feature work belongs) and on the
-# default branch in the primary (the rare intentional hotfix).
+# It is always a NO-OP inside a linked worktree (where feature work belongs).
 #
 # Config / override:
-#   HARNESS_DEFAULT_BRANCH        default branch name (default: main)
-#   HARNESS_ALLOW_PRIMARY_COMMIT  set to 1 for a genuine primary-checkout commit
-#   AIOS_ALLOW_PRIMARY_COMMIT     honored too, for parity with aios-workspace #388
+#   HARNESS_PRIMARY_COMMIT_POLICY  default-ok | strict   (default: default-ok)
+#   HARNESS_DEFAULT_BRANCH         default branch name (default: main)
+#   HARNESS_ALLOW_PRIMARY_COMMIT   set to 1 for a genuine primary-checkout commit
+#   AIOS_ALLOW_PRIMARY_COMMIT      honored too, for parity with aios-workspace #388
 #
 # Installed to `.git/hooks/pre-commit` by `install-primary-commit-guard.sh`, which
 # chains any pre-existing pre-commit hook to `.git/hooks/pre-commit.chained`.
@@ -46,7 +52,13 @@ fi
 
 if [[ "$is_primary" == "1" ]]; then
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
-  if [[ "$branch" != "$DEFAULT_BRANCH" ]]; then
+  policy="${HARNESS_PRIMARY_COMMIT_POLICY:-default-ok}"
+  blocked=0
+  case "$policy" in
+    strict) blocked=1 ;;
+    *) [[ "$branch" != "$DEFAULT_BRANCH" ]] && blocked=1 ;;
+  esac
+  if [[ "$blocked" == "1" ]]; then
     if [[ "${HARNESS_ALLOW_PRIMARY_COMMIT:-${AIOS_ALLOW_PRIMARY_COMMIT:-}}" == "1" ]]; then
       echo "[harness] ALLOW_PRIMARY_COMMIT set — allowing commit on '$branch' in the primary checkout." >&2
     else
