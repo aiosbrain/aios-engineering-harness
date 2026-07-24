@@ -27,7 +27,13 @@ question is whether the diff *does what the plan says*, not whether the code is 
 3. **Verification honesty** — do the tests actually exercise the changed behavior? Would
    they fail if the change were reverted? (An orphaned or tautological test is a P2
    finding — see `test-ci-wiring-audit`.)
-4. **Simplification** — dead code, needless indirection, premature abstraction
+4. **Context-mining** — "is there something we should have known but didn't?" Before
+   trusting the diff in isolation, check the archaeology: `git log`/`git blame` on the
+   touched lines (was this code the way it is *on purpose* — a past fix this change
+   quietly reverts?), the linked issue/PR history, and any `TODO`/`FIXME`/prior-revert
+   the change walks past. A change that re-introduces a previously-fixed bug is a P1 the
+   diff alone can't show. (Security lives in Safety, #2.)
+5. **Simplification** — dead code, needless indirection, premature abstraction
    (candidates for `simplify-pass`, not blockers).
 
 ## Output format
