@@ -15,6 +15,12 @@
             "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_edit guard-protected-paths.sh",
             "timeout": 30,
             "statusMessage": "Checking protected paths"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_edit guard-worktree.sh",
+            "timeout": 30,
+            "statusMessage": "Enforcing worktree discipline"
           }
         ]
       },
@@ -26,6 +32,12 @@
             "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_command guard-destructive.sh",
             "timeout": 30,
             "statusMessage": "Checking destructive command policy"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_command guard-worktree.sh",
+            "timeout": 30,
+            "statusMessage": "Enforcing worktree discipline"
           }
         ]
       }

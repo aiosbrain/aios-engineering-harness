@@ -24,6 +24,7 @@ pattern library (patterns A1–E5).
 | `hooks/` protocol + policies | AIOS `team-ops-guard.sh`; standard secret-pattern sets; Claude Code, Codex, and OpenCode lifecycle documentation | C4 | Versioned runtime-neutral events; native parsing stays in adapters; secret scan sees introduced content only. |
 | `hooks/guard-destructive.sh` | IndyDevDan — [claude-code-hooks-mastery](https://github.com/disler/claude-code-hooks-mastery); Anthropic destructive-op confirmation practice | C4, B6 | Blocks `rm -rf`, force-push, hard reset, etc. outside an allowlist. |
 | `hooks/guard-protected-paths.sh` | Hooks-as-enforcement consensus | C4 | Configurable denylist over normalized source and destination paths. |
+| `hooks/guard-worktree.sh` + `hooks/git/pre-commit-primary-guard` | AIOS `aios worktree` convention; aios-workspace #388 primary-commit guard (portable mirror) | C4, B6, E5 | Blocks branch-creation/edits/commits in the primary checkout across all runtimes so autonomous agents can't strand it on a feature branch; a git-hook backstop mirrors #388 (physically resolved, symlink-safe). |
 | `hooks/post-edit-format.sh` | Cherny (hooks auto-format); Hashimoto | C4 | Formats every normalized edited path and never blocks. |
 | `hooks/stop-verify-gate.sh` | AM B2 ladder; Claude Code and Codex Stop contracts; OpenCode plugin events | B2, C4 | Native stop block where available; one-shot `session.idle` continuation on OpenCode. |
 | `agents/code-reviewer` | Writer/reviewer split (AM C3 — a fresh session catches more); compound engineering's review agents | C3 | |

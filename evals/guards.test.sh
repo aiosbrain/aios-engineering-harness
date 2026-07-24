@@ -112,6 +112,37 @@ echo "── escape hatch ──────────────────
 printf '%s' "$(bjson 'git push --force origin main')" | HARNESS_ALLOW_DESTRUCTIVE=1 bash "$H/guard-destructive.sh" >/dev/null 2>&1
 if [ $? = 0 ]; then PASS=$((PASS+1)); echo "PASS (0): HARNESS_ALLOW_DESTRUCTIVE=1 bypasses"; else FAIL=$((FAIL+1)); echo "FAIL: escape hatch broken"; fi
 
+echo "── guard-worktree ─────────────────────────────────────────"
+WT=$(mktemp -d)
+( cd "$WT"; git init -q -b main; git config user.email t@t; git config user.name t; \
+  echo hi > a.txt; git add a.txt; git commit -qm init; \
+  git worktree add -q -b feat/x "$WT/wt" main ) >/dev/null 2>&1
+wpc() { jq -cn --arg cwd "$1" --arg cmd "$2" '{protocol_version:"1.0",event:"pre_command",runtime:{name:"mock"},cwd:$cwd,command:$cmd}'; }
+wpe() { jq -cn --arg cwd "$1" --arg p "$2" '{protocol_version:"1.0",event:"pre_edit",runtime:{name:"mock"},cwd:$cwd,paths:[{path:$p,action:"update"}],added_content:[]}'; }
+t "blocks checkout -b in primary"     2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git checkout -b feat/y')"
+t "blocks switch -c in primary"       2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git switch -c feat/z')"
+t "blocks git branch <new> in primary" 2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git branch newb')"
+t "allows git branch --all (read)"    0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git branch --all')"
+t "allows commit on main in primary"  0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git commit -m x')"
+t "allows commit inside worktree"     0 "$H/guard-worktree.sh" "$(wpc "$WT/wt" 'git commit -m x')"
+t "allows edit on main in primary"    0 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/a.txt")"
+t "allows edit inside worktree"       0 "$H/guard-worktree.sh" "$(wpe "$WT/wt" "$WT/wt/a.txt")"
+t "no-op outside a git repo"          0 "$H/guard-worktree.sh" "$(wpe /tmp /tmp/x.txt)"
+tc "codex adapter blocks checkout -b" 2 pre_command guard-worktree.sh "$(jq -cn --arg cwd "$WT" '{tool_name:"Bash",tool_input:{command:"git checkout -b feat/adapter"},cwd:$cwd}')"
+git -C "$WT" checkout -q -b feat/stranded   # strand a feature branch in the primary checkout
+t "blocks edit on feat in primary"    2 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/a.txt")"
+t "allows exempt aios.yaml edit"      0 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/aios.yaml")"
+t "blocks commit on feat in primary"  2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git commit -m x')"
+printf '%s' "$(wpe "$WT" "$WT/a.txt")" | HARNESS_ALLOW_PRIMARY_CHECKOUT=1 bash "$H/guard-worktree.sh" >/dev/null 2>&1
+if [ $? = 0 ]; then PASS=$((PASS+1)); echo "PASS (0): HARNESS_ALLOW_PRIMARY_CHECKOUT bypasses"; else FAIL=$((FAIL+1)); echo "FAIL: worktree escape hatch broken"; fi
+# pre-commit git-hook backstop (commit-time)
+bash "$ROOT/hooks/git/install-primary-commit-guard.sh" "$WT" >/dev/null 2>&1
+( cd "$WT"; echo more >> a.txt; git add a.txt; git commit -qm feat ) >/dev/null 2>&1
+if [ $? != 0 ]; then PASS=$((PASS+1)); echo "PASS: pre-commit guard blocks feature commit in primary"; else FAIL=$((FAIL+1)); echo "FAIL: pre-commit guard should block feature commit in primary"; fi
+( cd "$WT"; HARNESS_ALLOW_PRIMARY_COMMIT=1 git commit -qm feat ) >/dev/null 2>&1
+if [ $? = 0 ]; then PASS=$((PASS+1)); echo "PASS: pre-commit guard override commits"; else FAIL=$((FAIL+1)); echo "FAIL: pre-commit guard override should commit"; fi
+rm -rf "$WT"
+
 echo "── stop-verify-gate ───────────────────────────────────────"
 TMP=$(mktemp -d)
 pushd "$TMP" >/dev/null
