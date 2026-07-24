@@ -21,21 +21,23 @@ REPO_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || true)}"
 HOOKS_DIR="$(git -C "$REPO_ROOT" rev-parse --git-path hooks 2>/dev/null)"
 [[ "$HOOKS_DIR" = /* ]] || HOOKS_DIR="$REPO_ROOT/$HOOKS_DIR"
 mkdir -p "$HOOKS_DIR"
-TARGET="$HOOKS_DIR/pre-commit"
 MARKER="pre-commit-primary-guard"
 
-if [[ -f "$TARGET" ]] && grep -q "$MARKER" "$TARGET" 2>/dev/null; then
-  echo "[harness] primary-commit guard already installed at $TARGET"
-  exit 0
-fi
-
-# Preserve a pre-existing, unrelated pre-commit hook so the guard can chain it.
-if [[ -e "$TARGET" ]] && ! grep -q "$MARKER" "$TARGET" 2>/dev/null; then
-  cp "$TARGET" "$HOOKS_DIR/pre-commit.chained"
-  chmod +x "$HOOKS_DIR/pre-commit.chained"
-  echo "[harness] preserved existing pre-commit hook -> $HOOKS_DIR/pre-commit.chained"
-fi
-
-cp "$GUARD_SRC" "$TARGET"
-chmod +x "$TARGET"
-echo "[harness] installed primary-commit guard -> $TARGET"
+# Install as BOTH pre-commit (ordinary commits) and pre-merge-commit (non-ff merge
+# commits) so strict policy can genuinely force ff-only advancement of the primary.
+for hook in pre-commit pre-merge-commit; do
+  TARGET="$HOOKS_DIR/$hook"
+  if [[ -f "$TARGET" ]] && grep -q "$MARKER" "$TARGET" 2>/dev/null; then
+    echo "[harness] primary-commit guard already installed at $TARGET"
+    continue
+  fi
+  # Preserve a pre-existing, unrelated hook of the same name so the guard chains it.
+  if [[ -e "$TARGET" ]] && ! grep -q "$MARKER" "$TARGET" 2>/dev/null; then
+    cp "$TARGET" "$HOOKS_DIR/$hook.chained"
+    chmod +x "$HOOKS_DIR/$hook.chained"
+    echo "[harness] preserved existing $hook hook -> $HOOKS_DIR/$hook.chained"
+  fi
+  cp "$GUARD_SRC" "$TARGET"
+  chmod +x "$TARGET"
+  echo "[harness] installed primary-commit guard -> $TARGET"
+done

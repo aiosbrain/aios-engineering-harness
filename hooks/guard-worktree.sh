@@ -13,16 +13,23 @@
 # commit-time backstop for paths this agent hook never sees).
 #
 # Rules, only when the target repo is the PRIMARY checkout (no-op in worktrees):
-#   pre_command  — block creating a branch (`git checkout -b`/`switch -c`/`branch <new>`)
-#                  and block `git commit` on a non-default branch.
+#   pre_command  — block creating/renaming a branch (checkout -b/-B, switch -c/-C/
+#                  --create, branch -m/-c, branch <new>) and block `git commit`
+#                  (strict: any branch; default-ok: non-default branch only). The
+#                  command's TARGET repo is resolved from `git -C <dir>` / a leading
+#                  `cd <dir> &&`, not the session cwd.
 #   pre_edit     — block edits when HEAD is a non-default branch (you branched into
 #                  the primary). Editing on the default branch is allowed (config /
-#                  rare hotfix); basenames in HARNESS_PRIMARY_EXEMPT are always allowed.
+#                  rare hotfix); basenames in HARNESS_PRIMARY_EXEMPT are always
+#                  allowed. Each edited path is classified by its own repo.
+#
+# The default branch is HARNESS_DEFAULT_BRANCH if set, else auto-detected from
+# origin/HEAD, else init.defaultBranch, else the main|master allowlist. Detached
+# HEAD is treated as "not a feature branch" (allowed) so bisect/tag inspection works.
 #
 # Overrides: HARNESS_ALLOW_PRIMARY_CHECKOUT=1 disables the guard entirely.
-#            HARNESS_DEFAULT_BRANCH (default `main`) sets the allowed primary branch.
-#            HARNESS_PRIMARY_EXEMPT (default `aios.yaml`) is a space-separated basename
-#            allowlist for files that legitimately live in the primary checkout.
+#            HARNESS_PRIMARY_COMMIT_POLICY=strict blocks every primary commit.
+#            HARNESS_PRIMARY_EXEMPT (default `aios.yaml`) space-separated basenames.
 set -u
 
 [ "${HARNESS_ALLOW_PRIMARY_CHECKOUT:-0}" = "1" ] && exit 0
@@ -32,9 +39,7 @@ INPUT=$(cat 2>/dev/null || true)
 
 command -v jq >/dev/null 2>&1 || exit 3
 
-# The adapter wires this policy into both the edit matcher (pre_edit) and the bash
-# matcher (pre_command); by the time we run, run-hook.sh has normalized the payload
-# and set .event. Dispatch on that; anything else (post_edit/stop/unknown) is a no-op.
+# run-hook.sh has normalized the payload and set .event by the time we run.
 EVENT_NAME=$(printf '%s' "$INPUT" | jq -r '.event // empty' 2>/dev/null)
 case "$EVENT_NAME" in
   pre_command) MODE=command ;;
@@ -47,15 +52,26 @@ STATUS=$?
 [ "$STATUS" -eq 4 ] && exit 0
 [ "$STATUS" -eq 0 ] || exit 3
 
-DEFAULT_BRANCH=${HARNESS_DEFAULT_BRANCH:-main}
 EXEMPT_BASENAMES=${HARNESS_PRIMARY_EXEMPT:-aios.yaml}
 
-# probe <dir> -> echoes "primary <branch>" | "worktree <branch>" | "none".
-# Primary detection mirrors the tracked pre-commit guard: in the primary checkout
-# the git dir equals the common git dir; in a linked worktree it is
-# `<common>/worktrees/<name>`. Both paths are physically resolved (pwd -P) so a
-# macOS /private↔/var symlink can't make the primary look like a worktree.
-# Fail-open (none) when git cannot resolve the repo.
+# is_default_branch <branch> <dir> -> 0 if <branch> is allowed to live in the primary.
+# HARNESS_DEFAULT_BRANCH is authoritative when set. Otherwise the accepted set is the
+# UNION of {main, master} (always — the two universal defaults are never bricked) plus
+# origin/HEAD and init.defaultBranch when they resolve (covers develop/trunk defaults).
+# Detached HEAD (branch "HEAD") is not a feature branch -> allowed (bisect / tags).
+is_default_branch() {
+  [ "$1" = "HEAD" ] && return 0
+  if [ -n "${HARNESS_DEFAULT_BRANCH:-}" ]; then [ "$1" = "$HARNESS_DEFAULT_BRANCH" ]; return; fi
+  case "$1" in main|master) return 0 ;; esac
+  _oh=$(git -C "$2" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+  [ -n "$_oh" ] && [ "$1" = "$_oh" ] && return 0
+  _id=$(git -C "$2" config --get init.defaultBranch 2>/dev/null)
+  [ -n "$_id" ] && [ "$1" = "$_id" ] && return 0
+  return 1
+}
+
+# probe <dir> -> "primary <branch>" | "worktree <branch>" | "none". Both git dirs
+# are physically resolved (pwd -P) so a /var<->/private symlink can't fool it.
 probe() {
   _d=$1
   _gd=$(git -C "$_d" rev-parse --absolute-git-dir 2>/dev/null) || { echo none; return; }
@@ -75,10 +91,34 @@ block() {
     echo "BLOCKED by guard-worktree: $1"
     echo "$2"
     echo "Fix: create a dedicated worktree instead —"
-    echo "  aios worktree add feat/<name>        # (or: git worktree add -b feat/<name> ../<repo>-worktrees/<name> origin/${DEFAULT_BRANCH})"
+    echo "  aios worktree add feat/<name>        # (or: git worktree add -b feat/<name> ../<repo>-worktrees/<name> origin/<default>)"
     echo "Override for a genuine primary-checkout action: HARNESS_ALLOW_PRIMARY_CHECKOUT=1"
   } >&2
   exit 2
+}
+
+# target_dir <command> <fallback> -> the dir a git command actually operates in,
+# honoring `git -C <dir>` (global option, immediately after git) then a leading
+# `cd <dir> &&`. Falls back to <fallback> (the session cwd).
+target_dir() {
+  _cmd=$1; _fb=$2
+  _t=$(printf '%s' "$_cmd" | sed -nE "s/.*(^|[^[:alnum:]_])git[[:space:]]+-C[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:];&|]+).*/\2/p" | head -1)
+  if [ -z "$_t" ]; then
+    _t=$(printf '%s' "$_cmd" | sed -nE "s/^[[:space:]]*cd[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:];&|]+)[[:space:]]*(&&|;).*/\1/p" | head -1)
+  fi
+  [ -n "$_t" ] || { printf '%s' "$_fb"; return; }
+  _t=$(printf '%s' "$_t" | sed "s/^['\"]//; s/['\"]\$//")
+  case "$_t" in
+    /*) printf '%s' "$_t" ;;
+    ~*) eval printf '%s' "$_t" ;;
+    *)  printf '%s' "$_fb/$_t" ;;
+  esac
+}
+
+# norm_git <command> -> command with git GLOBAL options (right after `git`) stripped,
+# so subcommand patterns match `git -C x commit` / `git -c k=v commit` too.
+norm_git() {
+  printf '%s' "$1" | sed -E 's#(^|[^[:alnum:]_])git[[:space:]]+((-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[= ][^[:space:]]+|--work-tree[= ][^[:space:]]+|--namespace[= ][^[:space:]]+)[[:space:]]+)+#\1git #g'
 }
 
 CWD=$(printf '%s' "$EVENT" | jq -r '.cwd // empty')
@@ -88,26 +128,28 @@ if [ "$MODE" = "command" ]; then
   CMD=$(printf '%s' "$EVENT" | jq -r '.command // empty') || exit 3
   [ -n "$CMD" ] || exit 3
 
-  set -- $(probe "$CWD"); KIND=${1:-none}; BRANCH=${2:-}
+  TDIR=$(target_dir "$CMD" "$CWD")
+  [ -d "$TDIR" ] || TDIR="$CWD"
+  set -- $(probe "$TDIR"); KIND=${1:-none}; BRANCH=${2:-}
   [ "$KIND" = "primary" ] || exit 0
 
-  # Creating a branch in the primary checkout — the exact omo/Codex failure mode.
-  if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+(checkout[[:space:]]+-[a-zA-Z]*b|switch[[:space:]]+-[a-zA-Z]*c)([[:space:]]|$)'; then
-    block "creating a branch in the primary checkout (branch '$BRANCH')" \
-      "\`git checkout -b\` / \`git switch -c\` in the primary checkout strands it on a feature branch and collides with concurrent work."
+  NORM=$(norm_git "$CMD")
+
+  # Creating or renaming a branch in the primary checkout — the omo/Codex failure mode.
+  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+checkout[[:space:]]+(-[a-zA-Z]*[bB]|--create)([[:space:]]|=|$)' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+switch[[:space:]]+(-[a-zA-Z]*[cC]|--create)([[:space:]]|=|$)' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+(-[a-zA-Z]*[mMcC]|--move|--copy)([[:space:]]|$)' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+([^-][^;|&[:space:]]*)([[:space:]]|$)'; then
+    block "creating/renaming a branch in the primary checkout (branch '$BRANCH')" \
+      "Branch creation in the primary checkout strands it on a feature branch and collides with concurrent work."
   fi
-  # `git branch <newname>` (a bare `git branch` / `-a` / `--list` is a read — allow).
-  if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+branch[[:space:]]+([^-][^;|&[:space:]]*)([[:space:]]|$)'; then
-    block "creating a branch in the primary checkout (branch '$BRANCH')" \
-      "Create feature branches as worktrees, not in the primary checkout."
-  fi
+
   # Committing in the primary checkout (belt-and-suspenders with the git hook).
-  # strict policy blocks every branch; default-ok blocks only non-default branches.
-  if printf '%s' "$CMD" | grep -qE 'git[[:space:]]+commit([[:space:]]|$)'; then
+  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+commit([[:space:]]|$)'; then
     if [ "${HARNESS_PRIMARY_COMMIT_POLICY:-default-ok}" = "strict" ]; then
       block "committing in the primary checkout (branch '$BRANCH', strict policy)" \
         "The primary checkout only advances via \`git merge --ff-only\`; author commits in a worktree."
-    elif [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
+    elif ! is_default_branch "$BRANCH" "$TDIR"; then
       block "committing on non-default branch '$BRANCH' in the primary checkout" \
         "Feature commits belong in a worktree, never on a branch committed in the primary checkout."
     fi
@@ -115,30 +157,27 @@ if [ "$MODE" = "command" ]; then
   exit 0
 fi
 
-# MODE = edit
+# MODE = edit — classify EACH edited path by its own repo (not just the first).
 FILE_PATHS=$(printf '%s' "$EVENT" | jq -r '.paths[]? | .path, (.from // empty)' | awk 'NF && !seen[$0]++') || exit 3
 [ -n "$FILE_PATHS" ] || exit 0
 
-# Probe the repo of the first edited path (fall back to CWD).
-FIRST=$(printf '%s\n' "$FILE_PATHS" | head -n 1)
-case "$FIRST" in
-  /*) PROBE_DIR=$(dirname "$FIRST") ;;
-  *)  PROBE_DIR="$CWD/$(dirname "$FIRST")" ;;
-esac
-[ -d "$PROBE_DIR" ] || PROBE_DIR="$CWD"
-
-set -- $(probe "$PROBE_DIR"); KIND=${1:-none}; BRANCH=${2:-}
-[ "$KIND" = "primary" ] || exit 0
-[ "$BRANCH" = "$DEFAULT_BRANCH" ] && exit 0   # editing on the default branch in primary is allowed
-
-# On a non-default branch in the primary checkout: block unless every edited path
-# is an explicitly exempt basename.
-for p in $FILE_PATHS; do
+while IFS= read -r p || [ -n "$p" ]; do
+  [ -n "$p" ] || continue
+  case "$p" in
+    /*) pdir=$(dirname "$p") ;;
+    *)  pdir="$CWD/$(dirname "$p")" ;;
+  esac
+  [ -d "$pdir" ] || pdir="$CWD"
+  set -- $(probe "$pdir"); KIND=${1:-none}; BRANCH=${2:-}
+  [ "$KIND" = "primary" ] || continue
+  is_default_branch "$BRANCH" "$pdir" && continue
   base=$(basename "$p")
-  exempt=0
-  for e in $EXEMPT_BASENAMES; do [ "$base" = "$e" ] && exempt=1; done
-  [ "$exempt" = "1" ] && continue
+  _exempt=0
+  for e in $EXEMPT_BASENAMES; do [ "$base" = "$e" ] && _exempt=1; done
+  [ "$_exempt" = "1" ] && continue
   block "editing '$p' on non-default branch '$BRANCH' in the primary checkout" \
     "You are on a feature branch checked out in the primary checkout — feature work belongs in a linked worktree."
-done
+done <<EOF
+$FILE_PATHS
+EOF
 exit 0
