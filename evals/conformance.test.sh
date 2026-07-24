@@ -84,6 +84,29 @@ CODEX_STOP=$(fixture "$ROOT/evals/fixtures/native/codex/stop.json" "$TMP/nested"
 pipe_status "Codex nested stop finds failing root check" 2 "$CODEX_STOP" "$ADAPTER" codex stop stop-verify-gate.sh
 pipe_status "Codex stop recursion protection" 0 "$(printf '%s' "$CODEX_STOP" | jq -c '.stop_hook_active=true')" "$ADAPTER" codex stop stop-verify-gate.sh
 
+echo "Cursor native payloads"
+CURSOR_EDIT=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Write",tool_input:{file_path:"config.md",content:$k},cwd:$cwd}')
+pipe_status "Cursor secret addition blocked" 2 "$CURSOR_EDIT" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_CLEAN=$(jq -cn --arg cwd "$TMP" '{tool_name:"Write",tool_input:{file_path:"config.md",content:"key=$API_KEY"},cwd:$cwd}')
+pipe_status "Cursor clean edit allowed" 0 "$CURSOR_CLEAN" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_PROTECTED=$(jq -cn --arg cwd "$TMP" '{tool_name:"Write",tool_input:{file_path:".env",content:"X=1"},cwd:$cwd}')
+pipe_status "Cursor protected path blocked" 2 "$CURSOR_PROTECTED" "$ADAPTER" cursor pre_edit guard-protected-paths.sh
+CURSOR_EDIT_VIA_EDITS=$(jq -cn --arg cwd "$TMP" --arg k "key=$AWS_KEY" '{tool_name:"Edit",tool_input:{file_path:"c.md",edits:[{old_string:"x",new_string:$k}]},cwd:$cwd}')
+pipe_status "Cursor secret via edits[] blocked" 2 "$CURSOR_EDIT_VIA_EDITS" "$ADAPTER" cursor pre_edit guard-secrets.sh
+CURSOR_SAFE_CMD=$(jq -cn --arg cwd "$TMP/nested" '{command:"git status",cwd:$cwd}')
+pipe_status "Cursor safe command allowed" 0 "$CURSOR_SAFE_CMD" "$ADAPTER" cursor pre_command guard-destructive.sh
+CURSOR_BAD_CMD=$(jq -cn --arg cwd "$TMP" '{command:"rm -rf /",cwd:$cwd}')
+pipe_status "Cursor destructive command blocked" 2 "$CURSOR_BAD_CMD" "$ADAPTER" cursor pre_command guard-destructive.sh
+pipe_status "Cursor afterFileEdit format no-op" 0 "$(jq -cn '{file_path:"/nonexistent/x.ts",edits:[{old_string:"a",new_string:"b"}]}')" "$ADAPTER" cursor post_edit post-edit-format.sh
+CURSOR_STOP='{"status":"completed","loop_count":0}'
+CURSOR_PROJECT_DIR="$TMP/nested" pipe_status "Cursor stop finds failing root check (exit 2)" 2 "$CURSOR_STOP" "$ADAPTER" cursor stop stop-verify-gate.sh
+STOP_OUT=$(printf '%s' "$CURSOR_STOP" | CURSOR_PROJECT_DIR="$TMP/nested" /bin/sh "$ROOT/adapters/cursor/stop-gate.sh" 2>/dev/null)
+if printf '%s' "$STOP_OUT" | jq -e '.followup_message' >/dev/null 2>&1; then
+  PASS=$((PASS+1)); echo "PASS (0): Cursor stop-gate emits followup_message on block"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: Cursor stop-gate followup_message"
+fi
+
 echo "failure mapping + tracing + formatting"
 pipe_status "safety adapter blocks malformed payload" 2 '{bad' "$ADAPTER" codex pre_edit guard-secrets.sh
 pipe_status "formatter ignores malformed payload" 0 '{bad' "$ADAPTER" codex post_edit post-edit-format.sh

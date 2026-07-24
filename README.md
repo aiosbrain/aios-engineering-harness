@@ -54,23 +54,46 @@ lengthen the autonomy leash only as verification strengthens. **You don't climb 
 autonomy — you earn it through verification.** See
 [docs/autonomy-ladder.md](docs/autonomy-ladder.md).
 
-## Quickstart (Claude Code)
+## Quickstart
+
+One command, from your repo root — idempotent, auto-detects your runtimes
+(`.claude`/`.codex`/`.opencode`/`.cursor`), and **never overwrites** an existing config
+(it writes `<file>.harness-incoming` for you to merge):
+
+```bash
+git clone <this-repo> .harness && rm -rf .harness/.git
+.harness/install.sh            # or: --all, or: --runtime cursor --runtime codex
+# then: edit .harness/check (your real gate) and fill the AGENTS.md TODOs
+```
+
+`aios harness install` wraps this for AIOS repos. Or wire a single runtime by hand:
+
+<details><summary>Manual (Claude Code shown; Codex/OpenCode/Cursor in their adapter READMEs)</summary>
 
 ```bash
 # from your repo root
 git clone <this-repo> .harness   # or vendor the directories you want
 cp -r .harness/skills .claude/skills
 cp -r .harness/agents .claude/agents
-chmod +x .harness/hooks/*.sh .harness/adapters/run-hook.sh \
-  .harness/adapters/claude-code/normalize.sh
-# merge .harness/adapters/claude-code/settings.json into .claude/settings.json
+# make EVERY hook + adapter script executable (all runtimes, not just claude)
+chmod +x .harness/hooks/*.sh .harness/hooks/git/install-primary-commit-guard.sh \
+  .harness/adapters/run-hook.sh .harness/adapters/*/normalize.sh \
+  .harness/adapters/cursor/stop-gate.sh
+# MERGE (never overwrite) .harness/adapters/claude-code/settings.json into
+# .claude/settings.json — keep your existing hooks/permissions keys.
 cp .harness/AGENTS.md ./AGENTS.md          # then fill in the TODOs for your stack
 cp .harness/CONSTITUTION.md ./CONSTITUTION.md
+printf 'npm test\n' > .harness/check       # the gate stop-verify runs — set your real command
+.harness/hooks/git/install-primary-commit-guard.sh   # worktree commit guard (all repos)
 ```
 
+</details>
+
 Then, in a Claude Code session: `/plan-first` on your next non-trivial task, and watch
-the guards fire. Full per-stack instructions (including PHP/Python examples and the
-opencode/Codex paths): [docs/adopt-any-stack.md](docs/adopt-any-stack.md).
+the guards fire. **Codex, OpenCode, and Cursor are first-class too** — each has its own
+adapter under `adapters/{codex,opencode,cursor}/` (merge its config the same way; never
+overwrite an existing `.codex/hooks.json` / `opencode.json` / `.cursor/hooks.json`). Full
+per-stack instructions: [docs/adopt-any-stack.md](docs/adopt-any-stack.md).
 
 ## Design principles
 
