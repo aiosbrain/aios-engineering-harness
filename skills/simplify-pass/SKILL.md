@@ -19,7 +19,12 @@ You are running a dedicated simplification pass over the current change. The con
 3. Apply, in order of value:
    - **Delete** — dead code, unused parameters/imports, commented-out code, redundant
      comments (comments that restate the code, narrate the change, or address a
-     reviewer), defensive checks for conditions that cannot occur.
+     reviewer), defensive checks for conditions that cannot occur. Classic AI-slop tell:
+     **redundant verification after a destructive action** (delete-then-query to
+     "confirm", setter-then-getter, write-then-read-back) — the operation's contract is
+     the proof; delete the re-check. **Before removing a line that has NO test coverage,
+     pin its current behavior with a characterization test first** — then the deletion is
+     provably safe, not hopeful.
    - **Collapse** — indirection with a single caller, wrapper functions that add
      nothing, premature abstractions with one concrete use (inline them — no
      abstraction before the second use).
@@ -35,3 +40,6 @@ You are running a dedicated simplification pass over the current change. The con
 - Never expand scope beyond the changed hunks ("while I'm here…" is how cleanup passes
   break things).
 - One pass, cheap and fast. This is a hygiene step, not a redesign.
+- **A prose/docs file has no behavioral seam** — never add a text-match or word-count
+  "test" to pin it; that's pretend-coverage that blocks every future reword. Prose is
+  guarded by review, not by an assertion.
