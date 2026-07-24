@@ -14,7 +14,7 @@ case "$RUNTIME" in
 esac
 
 case "$POLICY" in
-  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|post-edit-format.sh|stop-verify-gate.sh) ;;
+  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|post-edit-format.sh|stop-verify-gate.sh) ;;
   *) echo "adapter: unsupported policy '$POLICY'" >&2; exit 3 ;;
 esac
 

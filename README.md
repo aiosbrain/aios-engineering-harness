@@ -30,7 +30,7 @@ this pack.
 |---|---|---|
 | **Contracts** | [`AGENTS.md`](AGENTS.md) · [`CONSTITUTION.md`](CONSTITUTION.md) | The repo↔agent contract (slow facts, conventions, error-ledger) and the pinned engineering principles with a machine-readable digest agents ingest every session. |
 | **Skills** | [`skills/`](skills/) | Ten curated methodology skills — plan-first, fail-first TDD, systematic debugging, verification, post-review simplification, compounding learnings, and a skill that writes new skills. Portable `SKILL.md` format (Claude Code, Codex, opencode). |
-| **Hooks & guards** | [`hooks/`](hooks/) | A versioned normalized event contract plus portable POSIX policies for secrets, destructive commands, protected paths, formatting, and stop verification. |
+| **Hooks & guards** | [`hooks/`](hooks/) | A versioned normalized event contract plus portable POSIX policies for secrets, destructive commands, protected paths, worktree discipline, formatting, and stop verification. |
 | **Subagents** | [`agents/`](agents/) | The review panel: fresh-context code reviewer, adversarial verifier, security reviewer, behavior-preserving simplifier. |
 | **Rubrics** | [`rubrics/`](rubrics/) | Machine-checkable readiness criteria — a spec-readiness gate (is this plan pick-up-able by a cold-start agent?) and a code-review grading sheet. Verdict-gated, refute-style. |
 | **Model routing** | [`models/routing.yaml`](models/routing.yaml) | Category-based multi-model delegation: a frontier lane for planning/review/merge, a bulk lane (e.g. GLM), a cheap utility lane — with fallback chains. Route by capability tier, never expose a model picker. |
