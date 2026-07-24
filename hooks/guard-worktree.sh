@@ -108,17 +108,21 @@ target_dir() {
   fi
   [ -n "$_t" ] || { printf '%s' "$_fb"; return; }
   _t=$(printf '%s' "$_t" | sed "s/^['\"]//; s/['\"]\$//")
+  # NEVER eval $_t — it is attacker-controlled, unexecuted command text. Expand a
+  # leading ~ / ~/ with a pure string substitution of $HOME; anything else is
+  # treated as a path relative to the fallback dir. No shell expansion happens.
   case "$_t" in
-    /*) printf '%s' "$_t" ;;
-    ~*) eval printf '%s' "$_t" ;;
-    *)  printf '%s' "$_fb/$_t" ;;
+    /*)    printf '%s' "$_t" ;;
+    "~")   printf '%s' "$HOME" ;;
+    "~/"*) printf '%s/%s' "$HOME" "${_t#~/}" ;;
+    *)     printf '%s' "$_fb/$_t" ;;
   esac
 }
 
 # norm_git <command> -> command with git GLOBAL options (right after `git`) stripped,
 # so subcommand patterns match `git -C x commit` / `git -c k=v commit` too.
 norm_git() {
-  printf '%s' "$1" | sed -E 's#(^|[^[:alnum:]_])git[[:space:]]+((-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[= ][^[:space:]]+|--work-tree[= ][^[:space:]]+|--namespace[= ][^[:space:]]+)[[:space:]]+)+#\1git #g'
+  printf '%s' "$1" | sed -E "s#(^|[^[:alnum:]_])git[[:space:]]+((-C[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:]]+)|-c[[:space:]]+[^[:space:]]+|--git-dir[= ]('[^']*'|\"[^\"]*\"|[^[:space:]]+)|--work-tree[= ]('[^']*'|\"[^\"]*\"|[^[:space:]]+)|--namespace[= ][^[:space:]]+)[[:space:]]+)+#\1git #g"
 }
 
 CWD=$(printf '%s' "$EVENT" | jq -r '.cwd // empty')
@@ -136,8 +140,10 @@ if [ "$MODE" = "command" ]; then
   NORM=$(norm_git "$CMD")
 
   # Creating or renaming a branch in the primary checkout — the omo/Codex failure mode.
-  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+checkout[[:space:]]+(-[a-zA-Z]*[bB]|--create)([[:space:]]|=|$)' ||
-     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+switch[[:space:]]+(-[a-zA-Z]*[cC]|--create)([[:space:]]|=|$)' ||
+  # The create flag may sit after other options (e.g. `checkout -q -b`), so allow
+  # intervening non-`;&|` option tokens between the subcommand and the create flag.
+  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+checkout[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[bB]|--create)([[:space:]]|=|$)' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+switch[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[cC]|--create)([[:space:]]|=|$)' ||
      printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+(-[a-zA-Z]*[mMcC]|--move|--copy)([[:space:]]|$)' ||
      printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+([^-][^;|&[:space:]]*)([[:space:]]|$)'; then
     block "creating/renaming a branch in the primary checkout (branch '$BRANCH')" \

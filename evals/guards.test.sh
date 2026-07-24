@@ -142,6 +142,20 @@ t "blocks git -C <primary> checkout -b" 2 "$H/guard-worktree.sh" "$(wpc "$WT" "g
 t "allows cd <worktree> && checkout -b" 0 "$H/guard-worktree.sh" "$(wpc "$WT" "cd $WT/wt && git checkout -b feat/stacked")"
 t "allows git -C <worktree> checkout -b" 0 "$H/guard-worktree.sh" "$(wpc "$WT" "git -C $WT/wt checkout -b feat/stacked")"
 t "blocks cd <primary> && checkout -b from wt" 2 "$H/guard-worktree.sh" "$(wpc "$WT/wt" "cd $WT && git checkout -b feat/q")"
+# review round 2, finding 2b — create flag after other options (e.g. -q)
+t "blocks checkout -q -b in primary"  2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git checkout -q -b feat/y')"
+t "blocks switch -q -c in primary"    2 "$H/guard-worktree.sh" "$(wpc "$WT" 'git switch -q -c feat/y')"
+t "allows checkout -q -- file"        0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git checkout -q -- a.txt')"
+t "allows branch -d (delete not create)" 0 "$H/guard-worktree.sh" "$(wpc "$WT" 'git branch -d old')"
+# review round 2, finding 1 — SECURITY: a tilde target must NOT be eval'd (no RCE)
+RCE_MARK="$WT/.rce_marker"; rm -f "$RCE_MARK"
+printf '%s' "$(wpc "$WT" "cd \"~/x\$(touch $RCE_MARK)\" && git status")" | bash "$H/guard-worktree.sh" >/dev/null 2>&1
+if [ ! -e "$RCE_MARK" ]; then PASS=$((PASS+1)); echo "PASS: tilde target not eval'd (no RCE)"; else FAIL=$((FAIL+1)); echo "FAIL: RCE — guard executed a command substitution"; rm -f "$RCE_MARK"; fi
+# review round 2, finding 3 — git -C "<path with spaces>" commit caught by the agent hook
+SPW="$(mktemp -d)/my repo"; mkdir -p "$SPW"
+( cd "$SPW"; git init -q -b main; git config user.email t@t; git config user.name t; echo hi > a.txt; git add a.txt; git commit -qm init; git checkout -q -b feat/s ) >/dev/null 2>&1
+t "blocks git -C <spaced primary> commit" 2 "$H/guard-worktree.sh" "$(wpc "$WT" "git -C \"$SPW\" commit -m x")"
+rm -rf "$(dirname "$SPW")"
 git -C "$WT" checkout -q -b feat/stranded   # strand a feature branch in the primary checkout
 t "blocks edit on feat in primary"    2 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/a.txt")"
 t "allows exempt aios.yaml edit"      0 "$H/guard-worktree.sh" "$(wpe "$WT" "$WT/aios.yaml")"
