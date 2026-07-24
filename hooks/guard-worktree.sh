@@ -98,13 +98,13 @@ block() {
 }
 
 # target_dir <command> <fallback> -> the dir a git command actually operates in,
-# honoring `git -C <dir>` (global option, immediately after git) then a leading
-# `cd <dir> &&`. Falls back to <fallback> (the session cwd).
+# honoring `git -C <dir>` / `git -C=<dir>` (global option, immediately after git)
+# then a leading `cd <dir> &&` / `pushd <dir> &&`. Falls back to the session cwd.
 target_dir() {
   _cmd=$1; _fb=$2
-  _t=$(printf '%s' "$_cmd" | sed -nE "s/.*(^|[^[:alnum:]_])git[[:space:]]+-C[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:];&|]+).*/\2/p" | head -1)
+  _t=$(printf '%s' "$_cmd" | sed -nE "s/.*(^|[^[:alnum:]_])git[[:space:]]+-C(=|[[:space:]]+)('[^']*'|\"[^\"]*\"|[^[:space:];&|]+).*/\3/p" | head -1)
   if [ -z "$_t" ]; then
-    _t=$(printf '%s' "$_cmd" | sed -nE "s/^[[:space:]]*cd[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:];&|]+)[[:space:]]*(&&|;).*/\1/p" | head -1)
+    _t=$(printf '%s' "$_cmd" | sed -nE "s/^[[:space:]]*(cd|pushd)[[:space:]]+(--[[:space:]]+)?('[^']*'|\"[^\"]*\"|[^[:space:];&|]+)[[:space:]]*(&&|;).*/\3/p" | head -1)
   fi
   [ -n "$_t" ] || { printf '%s' "$_fb"; return; }
   _t=$(printf '%s' "$_t" | sed "s/^['\"]//; s/['\"]\$//")
@@ -119,10 +119,15 @@ target_dir() {
   esac
 }
 
-# norm_git <command> -> command with git GLOBAL options (right after `git`) stripped,
-# so subcommand patterns match `git -C x commit` / `git -c k=v commit` too.
+# norm_git <command> -> command with the run of git GLOBAL options (right after
+# `git`, before the subcommand) stripped, so subcommand patterns match regardless of
+# leading globals: `git -C x commit`, `git -c k='v v' commit`, `git --no-pager commit`,
+# `git -p checkout -b`, `git --exec-path=/x commit`, equals or space forms. Arg-taking
+# options consume their value (a shell word that may contain quoted spaces); value-less
+# short (`-p`) and long (`--no-pager`) options are stripped generically so a new global
+# option doesn't silently reopen a bypass. Stops at the first non-option token.
 norm_git() {
-  printf '%s' "$1" | sed -E "s#(^|[^[:alnum:]_])git[[:space:]]+((-C[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:]]+)|-c[[:space:]]+[^[:space:]]+|--git-dir[= ]('[^']*'|\"[^\"]*\"|[^[:space:]]+)|--work-tree[= ]('[^']*'|\"[^\"]*\"|[^[:space:]]+)|--namespace[= ][^[:space:]]+)[[:space:]]+)+#\1git #g"
+  printf '%s' "$1" | sed -E "s#(^|[^[:alnum:]_])git[[:space:]]+(((-C|-c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env)(=|[[:space:]]+)([^[:space:]'\"]|'[^']*'|\"[^\"]*\")+|--exec-path(=([^[:space:]'\"]|'[^']*'|\"[^\"]*\")+)?|--[A-Za-z][A-Za-z-]*|-[A-Za-z])[[:space:]]+)+#\1git #g"
 }
 
 CWD=$(printf '%s' "$EVENT" | jq -r '.cwd // empty')
@@ -142,10 +147,11 @@ if [ "$MODE" = "command" ]; then
   # Creating or renaming a branch in the primary checkout — the omo/Codex failure mode.
   # The create flag may sit after other options (e.g. `checkout -q -b`), so allow
   # intervening non-`;&|` option tokens between the subcommand and the create flag.
-  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+checkout[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[bB]|--create)([[:space:]]|=|$)' ||
-     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+switch[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[cC]|--create)([[:space:]]|=|$)' ||
+  if printf '%s' "$NORM" | grep -qE 'git[[:space:]]+checkout[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[bB]|--create)([[:space:]]|=|$|['"'"'"[:alnum:]])' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+switch[[:space:]]([^;&|]*[[:space:]])?(-[a-zA-Z]*[cC]|--create)([[:space:]]|=|$|['"'"'"[:alnum:]])' ||
      printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+(-[a-zA-Z]*[mMcC]|--move|--copy)([[:space:]]|$)' ||
-     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+([^-][^;|&[:space:]]*)([[:space:]]|$)'; then
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+(-[a-zA-Z]*[ft]|--force|--track|--no-track)[[:space:]]+[^[:space:]]' ||
+     printf '%s' "$NORM" | grep -qE 'git[[:space:]]+branch[[:space:]]+([^-;|&[:space:]][^;|&[:space:]]*)([[:space:]]|[;|&]|$)'; then
     block "creating/renaming a branch in the primary checkout (branch '$BRANCH')" \
       "Branch creation in the primary checkout strands it on a feature branch and collides with concurrent work."
   fi
