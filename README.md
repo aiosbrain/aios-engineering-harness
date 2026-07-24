@@ -54,7 +54,21 @@ lengthen the autonomy leash only as verification strengthens. **You don't climb 
 autonomy — you earn it through verification.** See
 [docs/autonomy-ladder.md](docs/autonomy-ladder.md).
 
-## Quickstart (Claude Code)
+## Quickstart
+
+One command, from your repo root — idempotent, auto-detects your runtimes
+(`.claude`/`.codex`/`.opencode`/`.cursor`), and **never overwrites** an existing config
+(it writes `<file>.harness-incoming` for you to merge):
+
+```bash
+git clone <this-repo> .harness && rm -rf .harness/.git
+.harness/install.sh            # or: --all, or: --runtime cursor --runtime codex
+# then: edit .harness/check (your real gate) and fill the AGENTS.md TODOs
+```
+
+`aios harness install` wraps this for AIOS repos. Or wire a single runtime by hand:
+
+<details><summary>Manual (Claude Code shown; Codex/OpenCode/Cursor in their adapter READMEs)</summary>
 
 ```bash
 # from your repo root
@@ -72,6 +86,8 @@ cp .harness/CONSTITUTION.md ./CONSTITUTION.md
 printf 'npm test\n' > .harness/check       # the gate stop-verify runs — set your real command
 .harness/hooks/git/install-primary-commit-guard.sh   # worktree commit guard (all repos)
 ```
+
+</details>
 
 Then, in a Claude Code session: `/plan-first` on your next non-trivial task, and watch
 the guards fire. **Codex, OpenCode, and Cursor are first-class too** — each has its own
