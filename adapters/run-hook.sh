@@ -10,6 +10,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 case "$RUNTIME" in
   claude-code) NORMALIZER="$SCRIPT_DIR/claude-code/normalize.sh" ;;
   codex) NORMALIZER="$SCRIPT_DIR/codex/normalize.sh" ;;
+  cursor) NORMALIZER="$SCRIPT_DIR/cursor/normalize.sh" ;;
   *) echo "adapter: unsupported runtime '$RUNTIME'" >&2; exit 3 ;;
 esac
 

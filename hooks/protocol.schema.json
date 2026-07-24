@@ -15,7 +15,7 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "enum": ["claude", "codex", "opencode", "mock"] },
+        "name": { "enum": ["claude", "codex", "opencode", "cursor", "mock"] },
         "version": { "type": "string" }
       }
     },

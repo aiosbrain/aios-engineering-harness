@@ -17,7 +17,7 @@ printf '%s' "$INPUT" | jq -e '
   .protocol_version == "1.0" and
   (.event | IN("pre_edit", "pre_command", "post_edit", "stop")) and
   (.runtime | type == "object") and
-  (.runtime.name | IN("claude", "codex", "opencode", "mock")) and
+  (.runtime.name | IN("claude", "codex", "opencode", "cursor", "mock")) and
   (.cwd | type == "string" and length > 0) and
   (if .event == "pre_edit" then
      (.paths | type == "array" and length > 0) and
