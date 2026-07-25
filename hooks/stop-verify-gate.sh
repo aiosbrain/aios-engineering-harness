@@ -33,11 +33,26 @@ CWD=$(printf '%s' "$EVENT" | jq -r '.cwd') || exit 3
 LOOP_ACTIVE=$(printf '%s' "$EVENT" | jq -r '.stop.verification_loop_active') || exit 3
 STOP_STATUS=$(printf '%s' "$EVENT" | jq -r '.stop.stop_status // "ok"') || exit 3
 LOOP_COUNT=$(printf '%s' "$EVENT" | jq -r '.stop.loop_count // empty') || exit 3
-case "$LOOP_COUNT" in
-  ''|*[!0-9]*) [ "$LOOP_ACTIVE" = "true" ] && LOOP_COUNT=1 || LOOP_COUNT=0 ;;
-esac
 STOP_CAP=${HARNESS_STOP_CAP:-1}
 case "$STOP_CAP" in ''|*[!0-9]*) STOP_CAP=1 ;; esac
+[ "$STOP_CAP" -ge 1 ] || STOP_CAP=1
+
+# Cap decision. Runtimes with a real counter (cursor loop_count, the OpenCode
+# plugin) send an exact stop.loop_count, so HARNESS_STOP_CAP applies literally.
+# Runtimes that can only signal a BINARY continuation flag (Claude/Codex
+# stop_hook_active) omit loop_count — for them the bound is one continuation
+# regardless of cap, because a binary flag cannot count and a raised cap would
+# otherwise loop forever.
+AT_CAP=0
+case "$LOOP_COUNT" in
+  ''|*[!0-9]*)
+    [ "$LOOP_ACTIVE" = "true" ] && AT_CAP=1
+    LOOP_COUNT=$([ "$LOOP_ACTIVE" = "true" ] && echo 1 || echo 0)
+    ;;
+  *)
+    [ "$LOOP_COUNT" -ge "$STOP_CAP" ] && AT_CAP=1
+    ;;
+esac
 
 # Aborted or errored stops are never continued — continuing a session the user
 # killed (or that died) is exactly the runaway this gate exists to prevent.
@@ -53,14 +68,17 @@ if [ -z "$CHECK_CMD" ] && [ -f "$REPO_ROOT/.harness/check" ]; then
 fi
 [ -n "$CHECK_CMD" ] || exit 0
 
-if [ "$LOOP_COUNT" -ge "$STOP_CAP" ]; then
-  echo "stop-verify-gate: check still failing after $LOOP_COUNT continuation(s) (cap $STOP_CAP); allowing stop for human review. Do not report this work as done." >&2
-  exit 0
-fi
-
+# ALWAYS re-run the check — even at the cap. A check that turned green during the
+# continuation must be reported green, and a still-red claim must be verified,
+# never assumed.
 OUTPUT=$(cd "$REPO_ROOT" && eval "$CHECK_CMD" 2>&1)
 STATUS=$?
 [ "$STATUS" -eq 0 ] && exit 0
+
+if [ "$AT_CAP" -eq 1 ]; then
+  echo "stop-verify-gate: check still failing after $LOOP_COUNT continuation(s) (cap $STOP_CAP); allowing stop for human review. Do not report this work as done." >&2
+  exit 0
+fi
 
 # Red check: build the skill-anchored continuation. Anchors are fixed by design —
 # the gate never infers a "last relevant skill".

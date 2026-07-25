@@ -68,7 +68,28 @@ if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] && grep -q "still failing" "$SCRATCH/err
 else bad "cap handling (exit=$STATUS)"; fi
 
 OUT=$(printf '%s' "$(stop_ev 1)" | HARNESS_STOP_CAP=3 "$COPY/hooks/stop-verify-gate.sh" 2>/dev/null); STATUS=$?
-[ "$STATUS" -eq 2 ] && ok "HARNESS_STOP_CAP raises the bound (loop_count 1 < cap 3 continues)" || bad "configurable cap (exit=$STATUS)"
+[ "$STATUS" -eq 2 ] && ok "HARNESS_STOP_CAP raises the bound (exact loop_count 1 < cap 3 continues)" || bad "configurable cap (exit=$STATUS)"
+
+# Cap reached but the check turned GREEN during the continuation: report green
+# (exit 0, silent) — never an unverified "still failing" claim.
+set_check "true"
+OUT=$(gate "$(stop_ev 1)"); STATUS=$?
+if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] && [ ! -s "$SCRATCH/err.txt" ]; then
+  ok "cap reached + green check -> silent success (check re-verified, not assumed)"
+else bad "cap+green handling (exit=$STATUS err='$(head -c 50 "$SCRATCH/err.txt")')"; fi
+set_check "false"
+
+# Binary-flag runtimes (no loop_count field): bounded at ONE continuation even
+# when HARNESS_STOP_CAP is raised — a binary flag cannot count, so a higher cap
+# must not loop forever.
+BINARY_LOOP=$(jq -cn --arg cwd "$REPO" '{protocol_version:"1.0",event:"stop",runtime:{name:"mock"},cwd:$cwd,stop:{verification_loop_active:true,stop_status:"ok"}}')
+OUT=$(printf '%s' "$BINARY_LOOP" | HARNESS_STOP_CAP=5 "$COPY/hooks/stop-verify-gate.sh" 2>"$SCRATCH/err.txt"); STATUS=$?
+if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] && grep -q "still failing" "$SCRATCH/err.txt"; then
+  ok "binary loop flag (no loop_count) is bounded at one continuation despite cap 5"
+else bad "binary-flag bound (exit=$STATUS)"; fi
+
+OUT=$(printf '%s' "$(stop_ev 0)" | HARNESS_STOP_CAP=0 "$COPY/hooks/stop-verify-gate.sh" 2>/dev/null); STATUS=$?
+[ "$STATUS" -eq 2 ] && ok "HARNESS_STOP_CAP=0 clamps to 1 (first continuation still allowed)" || bad "cap=0 clamp (exit=$STATUS)"
 
 for st in aborted error; do
   OUT=$(gate "$(stop_ev 0 "$st")"); STATUS=$?
