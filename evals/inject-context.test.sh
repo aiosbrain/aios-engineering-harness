@@ -193,6 +193,18 @@ else
   bad "malformed skill entry handling (exit=$STATUS)"
 fi
 
+COPY_PARENT="$SCRATCH/vendored-repo"
+mkdir -p "$COPY_PARENT/.harness"
+cp -R "$ROOT/hooks" "$ROOT/adapters" "$ROOT/skills" "$COPY_PARENT/.harness/"
+cp "$ROOT/CONSTITUTION.md" "$COPY_PARENT/.harness/"
+sed 's/agent-digest:start -->/agent-digest:start -->\n- The repo-root customization marker is OWL-77./' "$ROOT/CONSTITUTION.md" > "$COPY_PARENT/CONSTITUTION.md"
+OUT=$(printf '%s' "$SS_CLAUDE" | "$COPY_PARENT/.harness/adapters/run-hook.sh" claude-code session_start inject-context.sh 2>/dev/null)
+if printf '%s' "$OUT" | grep -q "OWL-77"; then
+  ok "vendored .harness layout prefers the repo-root CONSTITUTION.md"
+else
+  bad "vendored layout used the stale pack CONSTITUTION.md"
+fi
+
 echo "── event validation ───────────────────────────────────────"
 
 printf '%s' '{"protocol_version":"1.1","event":"session_start","runtime":{"name":"mock"},"cwd":"/tmp","session_start":{"phase":"startup"}}' \

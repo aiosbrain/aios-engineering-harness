@@ -37,7 +37,13 @@ esac
 SCRIPT_DIR=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -P -- "$SCRIPT_DIR/.." && pwd)
 
+# When the pack is vendored at <repo>/.harness, install.sh seeds CONSTITUTION.md to
+# the repo root and the repo owner customizes THAT copy — prefer it over the pack's
+# own (possibly stale) template. Standalone/pack-repo layouts keep the local copy.
 CONSTITUTION="$ROOT/CONSTITUTION.md"
+if [ "$(basename -- "$ROOT")" = ".harness" ] && [ -f "$(dirname -- "$ROOT")/CONSTITUTION.md" ]; then
+  CONSTITUTION="$(dirname -- "$ROOT")/CONSTITUTION.md"
+fi
 [ -f "$CONSTITUTION" ] || {
   echo "inject-context: $CONSTITUTION not found" >&2
   exit 3
