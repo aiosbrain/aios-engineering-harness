@@ -3,6 +3,12 @@ name: test-ci-wiring-audit
 description: Find test files that exist on disk but run in neither the local test command nor CI (orphaned tests = false confidence), plus stale coverage reports. Use when asked "is this test actually running", "check test wiring", "orphaned tests". Flags and suggests exact fixes; applies nothing.
 source: AIOS toolkit skill, born from finding a test wired into neither `npm test` nor CI — coverage that never ran
 am_pattern: B2, C8
+triggers:
+  - orphaned tests
+  - tests not running
+  - ci wiring
+  - test suite audit
+  - tests skipped in ci
 ---
 
 You are auditing whether every test file on disk is actually executed by the local test

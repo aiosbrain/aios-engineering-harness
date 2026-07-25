@@ -46,6 +46,17 @@ quirks, live-verified on Claude Code 2.1.220 (2026-07-25):
   workspace has been trusted **interactively** once; a fresh directory driven purely by
   `claude -p` will not run them (verified 2.1.220 — user-level hooks are unaffected).
 
+## Skill routing (UserPromptSubmit)
+
+`UserPromptSubmit` runs `route-skills.sh`: deterministic, literal, case-insensitive
+substring matching of each skill's frontmatter `triggers:` list against the prompt —
+regex is never evaluated. Longest matched literal wins (ties: skill name ascending);
+at most one pointer is injected per prompt via the REQUIRED nested
+`hookSpecificOutput.additionalContext` form (top-level is ignored for this event).
+The pointer carries `<!-- aios-skill-route:<skill> -->`; a prompt already containing
+that marker for the winning skill injects nothing (marker dedupe — transcript parsing
+is banned by design). No match = no output = no action.
+
 The adapter accepts Claude Code's native `PreToolUse`, `PostToolUse`, and `Stop`
 payloads and emits protocol `1.0` events. Direct Claude-shaped input to the old hook
 paths remains available for the v0 migration window, but new installs use the adapter.

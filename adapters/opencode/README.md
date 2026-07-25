@@ -29,6 +29,11 @@ the portable verification gate. A failure injects one continuation through
 `client.session.promptAsync`; a per-session marker prevents recursive continuation.
 This is intentionally documented as weaker than Claude Code/Codex native Stop hooks.
 
+Skill routing: the `chat.message` hook inspects the incoming user message's text
+parts and appends at most one binding skill pointer (from `route-skills.sh`) before
+the model call; child sessions run the same hook, so subagents self-route. No match
+or any failure appends nothing.
+
 Context injection: the plugin also implements `experimental.chat.system.transform`
 (appends the CONSTITUTION agent-digest + skill index from `inject-context.sh` to the
 system prompt — live-verified on 1.18.4, 2026-07-25) and

@@ -19,6 +19,7 @@ Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and option
 | `stop` | `stop.verification_loop_active` |
 | `session_start` | `session_start.phase` (`startup`, `resume`, or `compact`) |
 | `subagent_start` | `subagent_start` (optional `agent_type`, `agent_id` — no runtime exposes the child's task text, so the protocol does not carry it) |
+| `user_prompt_submit` | `prompt` (the user's submitted text, verbatim) |
 
 Each path has an `action` (`add`, `update`, `delete`, `rename`, or `unknown`). A rename
 uses the destination as `path` and the source as `from`. The normative machine shape
@@ -31,8 +32,9 @@ means the event or local configuration could not be evaluated. Safety adapters m
 ## Output action envelope (1.1)
 
 Guard policies communicate by exit code only and print diagnostics to stderr.
-**Context policies** (`inject-context.sh`) additionally print exactly one JSON action
-envelope on stdout:
+**Context policies** (`inject-context.sh`, `route-skills.sh`) additionally print at
+most one JSON action envelope on stdout — empty stdout with exit `0` is a deliberate
+no-action (e.g. no trigger matched) and adapters emit nothing native for it:
 
 ```json
 {"protocol": "1.1", "action": "context", "text": "…injected context…"}

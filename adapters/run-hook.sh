@@ -26,7 +26,7 @@ esac
 CONTEXT_POLICY=0
 case "$POLICY" in
   guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|post-edit-format.sh|stop-verify-gate.sh) ;;
-  inject-context.sh) CONTEXT_POLICY=1 ;;
+  inject-context.sh|route-skills.sh) CONTEXT_POLICY=1 ;;
   *) echo "adapter: unsupported policy '$POLICY'" >&2; exit 3 ;;
 esac
 
@@ -85,6 +85,12 @@ if [ "$STATUS" -ne 0 ]; then
   exit 1
 fi
 
+# A context policy may legitimately decide to emit nothing (e.g. the router found
+# no matching trigger). Empty stdout + exit 0 is "no action": succeed silently.
+if [ -z "$OUTPUT" ]; then
+  exit 0
+fi
+
 ACTION=$(printf '%s' "$OUTPUT" | "$SCRIPT_DIR/../hooks/validate-action.sh") || {
   echo "harness adapter: $POLICY emitted an invalid action envelope for $RUNTIME $EVENT" >&2
   exit 1
@@ -116,6 +122,14 @@ case "$RUNTIME/$EVENT" in
     ;;
   cursor/session_start)
     printf '%s' "$ACTION" | jq -c '{additional_context: .text}'
+    ;;
+  claude-code/user_prompt_submit)
+    # UserPromptSubmit REQUIRES the nested form — top-level additionalContext is
+    # documented as silently ignored for this event.
+    printf '%s' "$ACTION" | jq -c '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: .text}}'
+    ;;
+  codex/user_prompt_submit)
+    printf '%s' "$ACTION" | jq -c '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: .text}}'
     ;;
   *)
     echo "harness adapter: no context translation for $RUNTIME $EVENT" >&2

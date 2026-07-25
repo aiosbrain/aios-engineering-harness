@@ -3,6 +3,12 @@ name: verify-change
 description: Verify a change actually works by exercising it end-to-end and observing real behavior — not just green tests. Use before declaring any nontrivial change done, before opening a PR, or when the user asks "does this actually work?".
 source: AM pattern B2 ("give it a check it can run" — the single most important pattern); Anthropic verification guidance
 am_pattern: B2
+triggers:
+  - verify the change
+  - verify it works
+  - prove it works
+  - end-to-end check
+  - did it actually work
 ---
 
 Green tests are necessary, not sufficient. You are verifying the change by **driving the

@@ -24,6 +24,18 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex user_prompt_submit route-skills.sh",
+            "timeout": 15,
+            "statusMessage": "Routing prompt to a matching skill"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",

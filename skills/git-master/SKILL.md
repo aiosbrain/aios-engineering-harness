@@ -3,6 +3,15 @@ name: git-master
 description: "Use whenever a task needs a commit or a git-history investigation. Covers atomic commits, staging by hunk, detecting commit-message style, rebase/squash/fixup/autosquash, blame, bisect, reflog, git log -S/-G, and questions like who wrote this or when was this added. Do NOT use for ordinary code edits unless the user asks for git work. Complements branch-reconciliation (which only classifies branches)."
 source: oh-my-opencode `git-master` (de-omo'd — dropped the PostHog/attachment-upload specifics); pairs with AIOS branch-reconciliation
 am_pattern: C4
+triggers:
+  - rebase
+  - cherry-pick
+  - merge conflict
+  - squash commits
+  - git history
+  - atomic commits
+  - stage by hunk
+  - bisect
 ---
 
 # Git Master

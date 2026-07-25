@@ -3,6 +3,12 @@ name: branch-reconciliation
 description: Classify every unmerged remote branch as truly-unmerged, already-shipped-under-a-different-hash (squash-merge duplicate), or genuinely stale — with evidence, not guesswork. Use when asked "are these branches actually stale", "check unmerged branches", "clean up feature branches". Classification only — never deletes or merges.
 source: AIOS toolkit skill, born from a 2026 audit where ~31 of 54 "unmerged" branches were byte-identical duplicates of already-merged work
 am_pattern: B5
+triggers:
+  - unmerged branch
+  - diverged branch
+  - reconcile branches
+  - stale branches
+  - which branches are merged
 ---
 
 You are reconciling unmerged remote branches against the default branch so stale-branch

@@ -3,6 +3,13 @@ name: visual-qa
 description: "Rigorous visual QA for any UI you built or changed — web pages, components, and terminal/TUI output. Use AFTER a UI change and BEFORE calling it done, or when asked does this look right / match the mock / is the layout broken / does the CJK text clip. Captures objective screenshot+diff evidence with a bundled zero-dependency Node script, then gets an INDEPENDENT reviewer (fresh context, never the builder) to judge design-system integrity and visual/CJK fidelity, looping until a fresh independent PASS. The UI specialization of verify-change. Skip for pure backend/library work with no rendered surface. Triggers: visual QA, screenshot diff, pixel diff, UI looks wrong, matches the mock, reference fidelity, design-system check, responsive check, CJK/Korean/Japanese text clipping, TUI alignment, box-drawing drift."
 source: oh-my-opencode `visual-qa` (methodology + the bundled zero-dep evidence script `scripts/visual-qa.mjs`, copied verbatim), ported runtime-neutral; DESIGN.md-as-contract idea from oh-my-opencode `frontend`
 am_pattern: B2
+triggers:
+  - visual qa
+  - screenshot
+  - looks wrong
+  - ui regression
+  - check the ui
+  - visual check
 ---
 
 You are verifying a rendered UI against intent using **objective script evidence** plus an

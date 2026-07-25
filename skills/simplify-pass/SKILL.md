@@ -3,6 +3,11 @@ name: simplify-pass
 description: Behavior-preserving cleanup pass over a reviewed diff — run AFTER tests pass and review is addressed, BEFORE merge. Deletes dead code, collapses needless indirection, applies YAGNI. Use when the user says "simplify", "clean up this diff", or as the standard final pass on any agent-authored change.
 source: Boris Cherny (code-simplifier subagent habit); AIOS toolkit `aios simplify`
 am_pattern: C7
+triggers:
+  - simplify
+  - simplification pass
+  - reduce complexity
+  - cleanup pass
 ---
 
 "Tests pass and the reviewer is happy" is where debt *compounds*, not where work ends.

@@ -60,6 +60,8 @@ jobs:
         run: bash evals/codex-driver.test.sh
       - name: inject-context.test.sh
         run: bash evals/inject-context.test.sh
+      - name: route-skills.test.sh
+        run: bash evals/route-skills.test.sh
       - name: evidence.test.py
         run: python3 evals/evidence.test.py
 

@@ -3,6 +3,13 @@ name: plan-first
 description: Research → Plan → Implement discipline for any non-trivial change. Use BEFORE writing code when a task touches more than one file, introduces a dependency, changes behavior users see, or when the user asks to "plan", "spec", or "design" something. Skip only for one-sentence diffs.
 source: Dex Horthy (HumanLayer, advanced-context-engineering / 12-factor agents); Boris Cherny (plan-mode-first)
 am_pattern: B1, B3
+triggers:
+  - write a plan
+  - implementation plan
+  - plan before
+  - plan this work
+  - break down this task
+  - plan first
 ---
 
 You are running the RPI loop: **Research → Plan → Implement**. The plan — not the diff —
