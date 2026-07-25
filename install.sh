@@ -2,7 +2,8 @@
 # .harness/install.sh — idempotent installer that wires the vendored harness into a repo.
 #
 # Safe by design:
-#   - NEVER overwrites an existing runtime config — writes <file>.harness-incoming instead.
+#   - NEVER overwrites an existing runtime config or a locally edited skill/agent/rule
+#     file — writes <file>.harness-incoming instead.
 #   - seeds AGENTS.md / CONSTITUTION.md / .harness/check only when absent.
 #   - re-running is a no-op once everything is in place.
 #   - strips the template `$comment` from installed JSON configs.
@@ -44,7 +45,9 @@ REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 echo "[harness] repo=$REPO_ROOT harness=$HARNESS_DIR"
 
 # Validate every explicit --runtime even when --all is also present.
-for rt in "${WANT[@]}"; do
+# ${WANT[@]+...} guards the empty-array expansion: stock macOS bash 3.2 treats
+# "${WANT[@]}" on an empty array as unbound under `set -u`.
+for rt in ${WANT[@]+"${WANT[@]}"}; do
   case "$rt" in
     claude-code|codex|opencode|cursor) ;;
     *) echo "[harness] unknown runtime '$rt'" >&2; exit 2 ;;
@@ -64,11 +67,9 @@ fi
 declare -a UNIQUE_WANT=()
 for rt in "${WANT[@]}"; do
   FOUND=0
-  if [ ${#UNIQUE_WANT[@]} -gt 0 ]; then
-    for existing in "${UNIQUE_WANT[@]}"; do
-      [ "$existing" = "$rt" ] && FOUND=1
-    done
-  fi
+  for existing in ${UNIQUE_WANT[@]+"${UNIQUE_WANT[@]}"}; do
+    [ "$existing" = "$rt" ] && FOUND=1
+  done
   [ "$FOUND" = 1 ] || UNIQUE_WANT+=("$rt")
 done
 WANT=("${UNIQUE_WANT[@]}")
@@ -115,6 +116,29 @@ install_json() {  # install_json <src> <dst> — strip $comment; never overwrite
     cp "$tmp" "$2.harness-incoming"; echo "[harness] MERGE  $2 exists -> wrote $2.harness-incoming (merge its keys; never auto-overwritten)"
   fi
   rm -f "$tmp"
+}
+
+install_file() {  # install_file <src> <dst> — seed when absent; NEVER overwrite a differing file
+  if ! path_exists "$2"; then
+    mkdir -p "$(dirname "$2")"; cp "$1" "$2"
+  elif cmp -s "$1" "$2"; then
+    :
+  else
+    if path_exists "$2.harness-incoming"; then
+      echo "install: refusing to overwrite existing merge artifact $2.harness-incoming" >&2
+      return 1
+    fi
+    cp "$1" "$2.harness-incoming"
+    echo "[harness] MERGE  $2 differs -> wrote $2.harness-incoming (local edits kept; never auto-overwritten)"
+  fi
+}
+
+sync_tree() {  # sync_tree <src-dir> <dst-dir> — install_file for every file in the tree
+  local f
+  while IFS= read -r -d '' f; do
+    f="${f#./}"
+    install_file "$1/$f" "$2/$f" || return 1
+  done < <(cd "$1" && find . -type f -print0)
 }
 
 # Abort before any writes if pending configuration merge work already exists.
@@ -164,22 +188,24 @@ for rt in "${WANT[@]}"; do
   case "$rt" in
     claude-code)
       mkdir -p "$REPO_ROOT/.claude/skills" "$REPO_ROOT/.claude/agents"
-      cp -R "$HARNESS_DIR"/skills/. "$REPO_ROOT/.claude/skills/"
-      cp "$HARNESS_DIR"/agents/*.md "$REPO_ROOT/.claude/agents/"
+      sync_tree "$HARNESS_DIR/skills" "$REPO_ROOT/.claude/skills"
+      for f in "$HARNESS_DIR"/agents/*.md; do
+        install_file "$f" "$REPO_ROOT/.claude/agents/$(basename "$f")"
+      done
       install_json "$HARNESS_DIR/adapters/claude-code/settings.json" "$REPO_ROOT/.claude/settings.json" ;;
     codex)
       mkdir -p "$REPO_ROOT/.agents/skills"
-      cp -R "$HARNESS_DIR"/skills/. "$REPO_ROOT/.agents/skills/"
+      sync_tree "$HARNESS_DIR/skills" "$REPO_ROOT/.agents/skills"
       install_json "$HARNESS_DIR/adapters/codex/hooks.json" "$REPO_ROOT/.codex/hooks.json" ;;
     opencode)
       mkdir -p "$REPO_ROOT/.opencode/plugins" "$REPO_ROOT/.opencode/skills"
-      cp "$HARNESS_DIR/adapters/opencode/plugin/harness.ts" "$REPO_ROOT/.opencode/plugins/harness.ts"
-      cp "$HARNESS_DIR/adapters/opencode/normalize.ts" "$REPO_ROOT/.opencode/normalize.ts"
-      cp -R "$HARNESS_DIR"/skills/. "$REPO_ROOT/.opencode/skills/"
+      install_file "$HARNESS_DIR/adapters/opencode/plugin/harness.ts" "$REPO_ROOT/.opencode/plugins/harness.ts"
+      install_file "$HARNESS_DIR/adapters/opencode/normalize.ts" "$REPO_ROOT/.opencode/normalize.ts"
+      sync_tree "$HARNESS_DIR/skills" "$REPO_ROOT/.opencode/skills"
       install_json "$HARNESS_DIR/adapters/opencode/opencode.json" "$REPO_ROOT/opencode.json" ;;
     cursor)
       mkdir -p "$REPO_ROOT/.cursor/rules"
-      cp -R "$HARNESS_DIR"/adapters/cursor/rules/. "$REPO_ROOT/.cursor/rules/"
+      sync_tree "$HARNESS_DIR/adapters/cursor/rules" "$REPO_ROOT/.cursor/rules"
       install_json "$HARNESS_DIR/adapters/cursor/hooks.json" "$REPO_ROOT/.cursor/hooks.json" ;;
   esac
   echo "[harness] wired  $rt"

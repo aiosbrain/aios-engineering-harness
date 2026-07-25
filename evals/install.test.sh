@@ -209,5 +209,38 @@ else
   pass "commit-guard installation failure propagates"
 fi
 
+echo "default invocation survives stock bash 3.2 (empty-array set -u)"
+B32="$TMP/bash32"
+new_repo "$B32"
+# No --runtime/--all: WANT stays empty through validation, which crashed on
+# macOS /bin/bash 3.2 ("WANT[@]: unbound variable"). Run under /bin/bash to cover it.
+if [ -x /bin/bash ] &&
+   /bin/bash "$B32/.harness/install.sh" --repo "$B32" >/dev/null 2>&1 &&
+   [ -f "$B32/.claude/settings.json" ]; then
+  pass "default (auto-detect) invocation succeeds under /bin/bash"
+elif [ ! -x /bin/bash ]; then
+  pass "default (auto-detect) invocation under /bin/bash skipped (no /bin/bash)"
+else
+  fail "default (auto-detect) invocation under /bin/bash"
+fi
+
+echo "locally edited skills survive re-install"
+SKILL_EDIT="$TMP/skill-edit"
+new_repo "$SKILL_EDIT"
+if "$SKILL_EDIT/.harness/install.sh" --repo "$SKILL_EDIT" --runtime claude-code >/dev/null 2>&1; then
+  EDITED="$SKILL_EDIT/.claude/skills/plan-first/SKILL.md"
+  printf '\nLOCAL CUSTOMIZATION\n' >> "$EDITED"
+  if "$SKILL_EDIT/.harness/install.sh" --repo "$SKILL_EDIT" --runtime claude-code >/dev/null 2>&1 &&
+     grep -q "LOCAL CUSTOMIZATION" "$EDITED" &&
+     [ -f "$EDITED.harness-incoming" ] &&
+     ! grep -q "LOCAL CUSTOMIZATION" "$EDITED.harness-incoming"; then
+    pass "edited skill is kept; pristine copy lands in .harness-incoming"
+  else
+    fail "edited skill was overwritten or no merge artifact was written"
+  fi
+else
+  fail "claude-code install for skill-edit case"
+fi
+
 echo "install.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1
