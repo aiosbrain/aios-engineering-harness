@@ -60,7 +60,10 @@ case "$EVENT" in
       {
         protocol_version:"1.0", event:"stop", runtime:{name:"codex"},
         cwd:(.cwd // $cwd), session_id:(.session_id // ""),
-        stop:{verification_loop_active:(.stop_hook_active // false)}
+        stop:{
+          verification_loop_active:(.stop_hook_active // false),
+          stop_status:(if (.status // "") | IN("aborted", "error") then .status else "ok" end)
+        }
       }
     ' 2>/dev/null) || exit 3
     ;;

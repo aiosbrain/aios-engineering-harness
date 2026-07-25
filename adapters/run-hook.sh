@@ -24,8 +24,10 @@ case "$RUNTIME" in
 esac
 
 CONTEXT_POLICY=0
+STOP_POLICY=0
 case "$POLICY" in
-  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|post-edit-format.sh|stop-verify-gate.sh) ;;
+  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|post-edit-format.sh) ;;
+  stop-verify-gate.sh) STOP_POLICY=1 ;;
   inject-context.sh|route-skills.sh) CONTEXT_POLICY=1 ;;
   *) echo "adapter: unsupported policy '$POLICY'" >&2; exit 3 ;;
 esac
@@ -66,6 +68,33 @@ if [ -n "${HARNESS_TRACE_FILE:-}" ]; then
 fi
 
 [ -z "$ERRORS" ] || printf '%s\n' "$ERRORS" >&2
+
+if [ "$STOP_POLICY" -eq 1 ]; then
+  # Stop channel: the gate encodes "continue" as exit 2 + a `continue` action on
+  # stdout (reason already mirrored on stderr above). Translate per runtime; the
+  # legacy path (no/invalid stdout action) keeps the raw exit-code semantics.
+  if [ "$STATUS" -eq 2 ] && ACTION=$(printf '%s' "$OUTPUT" | "$SCRIPT_DIR/../hooks/validate-action.sh" 2>/dev/null) \
+     && [ "$(printf '%s' "$ACTION" | jq -r '.action')" = "continue" ]; then
+    case "$RUNTIME" in
+      cursor)
+        # Cursor continues via {"followup_message": ...} + exit 0, bounded by the
+        # hooks.json loop_limit.
+        printf '%s' "$ACTION" | jq -c '{followup_message: .reason}'
+        exit 0
+        ;;
+      *)
+        # Claude/Codex native Stop continuation: exit 2, reason on stderr (already
+        # emitted). Never leak the raw envelope to stdout.
+        exit 2
+        ;;
+    esac
+  fi
+  if [ "$STATUS" -eq 3 ]; then
+    echo "BLOCKED by harness adapter: stop policy could not be evaluated" >&2
+    exit 2
+  fi
+  exit "$STATUS"
+fi
 
 if [ "$CONTEXT_POLICY" -eq 0 ]; then
   # Guard channel: preserve historical semantics — any policy stdout is a

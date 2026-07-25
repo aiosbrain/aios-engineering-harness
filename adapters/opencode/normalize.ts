@@ -15,7 +15,11 @@ export type NormalizedEvent = {
   paths?: PathChange[]
   added_content?: Array<{ path: string; content: string }>
   command?: string
-  stop?: { verification_loop_active: boolean }
+  stop?: {
+    verification_loop_active: boolean
+    stop_status?: "ok" | "failed" | "aborted" | "error"
+    loop_count?: number
+  }
   session_start?: { phase: "startup" | "resume" | "compact" }
   subagent_start?: { agent_type?: string; agent_id?: string }
   prompt?: string
@@ -99,14 +103,23 @@ export function normalizeToolEvent(
   return { ...base, paths, added_content: [{ path, content }] }
 }
 
-export function normalizeStopEvent(cwd: string, sessionID: string, loop: boolean): NormalizedEvent {
+export function normalizeStopEvent(
+  cwd: string,
+  sessionID: string,
+  loop: boolean,
+  loopCount?: number,
+): NormalizedEvent {
   return {
     protocol_version: "1.0",
     event: "stop",
     runtime: { name: "opencode" },
     cwd,
     session_id: sessionID,
-    stop: { verification_loop_active: loop },
+    stop: {
+      verification_loop_active: loop,
+      stop_status: "ok",
+      loop_count: loopCount ?? (loop ? 1 : 0),
+    },
   }
 }
 

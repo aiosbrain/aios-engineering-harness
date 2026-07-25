@@ -68,7 +68,11 @@ case "$EVENT" in
       {
         protocol_version:"1.0", event:"stop", runtime:{name:"cursor"},
         cwd:$cwd, session_id:(.conversation_id // ""),
-        stop:{verification_loop_active:((.loop_count // 0) > 0)}
+        stop:{
+          verification_loop_active:((.loop_count // 0) > 0),
+          stop_status:(if (.status // "") | IN("aborted", "error") then .status else "ok" end),
+          loop_count:(.loop_count // 0)
+        }
       }' 2>/dev/null) || exit 3
     ;;
   session_start)

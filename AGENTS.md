@@ -40,6 +40,7 @@ bash evals/conformance.test.sh
 bash evals/codex-driver.test.sh
 bash evals/inject-context.test.sh
 bash evals/route-skills.test.sh
+bash evals/stop-continuation.test.sh
 python3 evals/evidence.test.py
 
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)

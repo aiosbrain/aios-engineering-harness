@@ -57,7 +57,9 @@
       "additionalProperties": false,
       "required": ["verification_loop_active"],
       "properties": {
-        "verification_loop_active": { "type": "boolean" }
+        "verification_loop_active": { "type": "boolean" },
+        "stop_status": { "enum": ["ok", "failed", "aborted", "error"] },
+        "loop_count": { "type": "integer", "minimum": 0 }
       }
     },
     "session_start": {

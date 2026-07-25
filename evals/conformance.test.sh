@@ -105,7 +105,14 @@ CURSOR_BAD_CMD=$(jq -cn --arg cwd "$TMP" '{command:"rm -rf /",cwd:$cwd}')
 pipe_status "Cursor destructive command blocked" 2 "$CURSOR_BAD_CMD" "$ADAPTER" cursor pre_command guard-destructive.sh
 pipe_status "Cursor afterFileEdit format no-op" 0 "$(jq -cn '{file_path:"/nonexistent/x.ts",edits:[{old_string:"a",new_string:"b"}]}')" "$ADAPTER" cursor post_edit post-edit-format.sh
 CURSOR_STOP='{"status":"completed","loop_count":0}'
-CURSOR_PROJECT_DIR="$TMP/nested" pipe_status "Cursor stop finds failing root check (exit 2)" 2 "$CURSOR_STOP" "$ADAPTER" cursor stop stop-verify-gate.sh
+# Since protocol 1.1 the cursor stop channel translates a red check to
+# {"followup_message": ...} with exit 0 (Cursor continues via JSON, not exit codes).
+STOP_RAW=$(printf '%s' "$CURSOR_STOP" | CURSOR_PROJECT_DIR="$TMP/nested" /bin/sh "$ADAPTER" cursor stop stop-verify-gate.sh 2>/dev/null)
+if [ $? -eq 0 ] && printf '%s' "$STOP_RAW" | jq -e '.followup_message | contains("verify-change")' >/dev/null 2>&1; then
+  PASS=$((PASS+1)); echo "PASS (0): Cursor stop translates a failing root check to followup_message"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: Cursor stop followup translation (got '$(printf '%s' "$STOP_RAW" | head -c 60)')"
+fi
 STOP_OUT=$(printf '%s' "$CURSOR_STOP" | CURSOR_PROJECT_DIR="$TMP/nested" /bin/sh "$ROOT/adapters/cursor/stop-gate.sh" 2>/dev/null)
 if printf '%s' "$STOP_OUT" | jq -e '.followup_message' >/dev/null 2>&1; then
   PASS=$((PASS+1)); echo "PASS (0): Cursor stop-gate emits followup_message on block"

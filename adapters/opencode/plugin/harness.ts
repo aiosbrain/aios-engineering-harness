@@ -22,6 +22,7 @@ function runScript(root: string, script: string, event: NormalizedEvent) {
   })
   return {
     status: result.status ?? 3,
+    stdout: (result.stdout ?? "").trim(),
     reason: (result.stderr || result.error?.message || "").trim(),
   }
 }
@@ -41,7 +42,9 @@ function trace(root: string, policy: string, event: NormalizedEvent, outcome: nu
 export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => {
   const candidate = process.env.HARNESS_ROOT || join(worktree, ".harness")
   const root = existsSync(join(candidate, "hooks", "protocol.schema.json")) ? candidate : worktree
-  const continued = new Set<string>()
+  // Bounded per-session continuation counter. Cleared on success, on error, and on
+  // session deletion; the portable gate enforces the cap via stop.loop_count.
+  const continuations = new Map<string, number>()
 
   const enforce = (policy: string, event: NormalizedEvent, formatting = false) => {
     const result = runScript(root, policy, event)
@@ -174,36 +177,50 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
     },
 
     event: async ({ event }) => {
+      if (event.type === "session.deleted") {
+        const props = event.properties as { info?: { id?: string }; sessionID?: string }
+        const deleted = props.info?.id ?? props.sessionID
+        if (deleted) continuations.delete(deleted)
+        return
+      }
       if (event.type !== "session.idle") return
       const sessionID = event.properties.sessionID
-      const loop = continued.has(sessionID)
-      // The second idle event is the terminal verification attempt. Do not pass
-      // the recursion flag to the hook, because that flag intentionally skips
-      // verification and would turn a still-red check into a false success.
-      const normalized = normalizeStopEvent(directory, sessionID, false)
+      const count = continuations.get(sessionID) ?? 0
+      // The gate enforces the cap portably via stop.loop_count (default cap 1):
+      // at the cap it allows the stop with an honest still-red note instead of
+      // looping, so re-running verification is never skipped.
+      const normalized = normalizeStopEvent(directory, sessionID, count > 0, count)
       const result = runScript(root, "stop-verify-gate.sh", normalized)
       const traceStatus = trace(root, "stop-verify-gate.sh", normalized, result.status)
 
       if (result.status === 0 && traceStatus === 0) {
-        continued.delete(sessionID)
+        continuations.delete(sessionID)
+        if (count > 0 && result.reason) {
+          // Cap reached with the check still red: the gate allowed the stop —
+          // surface its honest note terminally instead of silently succeeding.
+          throw new Error(result.reason)
+        }
         return
       }
-      if (loop) {
-        continued.delete(sessionID)
-        const reason =
-          traceStatus !== 0
-            ? "The harness verification trace still could not be recorded after one continuation."
-            : result.status === 2
-              ? result.reason || "The harness verification gate is still red after one continuation."
-              : result.reason || "The harness verification gate still could not be evaluated after one continuation."
-        throw new Error(reason)
+      if (result.status !== 2 || traceStatus !== 0) {
+        // Error paths clear the counter (never leave a stale continuation state).
+        continuations.delete(sessionID)
+        throw new Error(
+          result.reason ||
+            "The harness verification gate could not be evaluated. Diagnose the adapter or dependency failure before reporting completion.",
+        )
       }
 
-      continued.add(sessionID)
-      const reason =
-        result.status === 2
-          ? result.reason
-          : "The harness verification gate could not be evaluated. Diagnose the adapter or dependency failure before reporting completion."
+      // Exit 2: bounded continuation. Prefer the structured `continue` action on
+      // stdout; fall back to the stderr reason.
+      let reason = result.reason
+      try {
+        const action = JSON.parse(result.stdout)
+        if (action.action === "continue" && typeof action.reason === "string") reason = action.reason
+      } catch {
+        // stderr fallback is fine
+      }
+      continuations.set(sessionID, count + 1)
       await client.session.promptAsync({
         path: { id: sessionID },
         query: { directory },

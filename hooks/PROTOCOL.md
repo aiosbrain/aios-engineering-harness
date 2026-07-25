@@ -16,7 +16,7 @@ Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and option
 | `pre_edit` | `paths[]`, `added_content[]` (content introduced by the edit only) |
 | `pre_command` | `command` |
 | `post_edit` | `paths[]` |
-| `stop` | `stop.verification_loop_active` |
+| `stop` | `stop.verification_loop_active`; optional normalized `stop.stop_status` (`ok`, `failed`, `aborted`, `error` — aborted/error stops are never continued) and `stop.loop_count` (EXACT continuations already taken — only runtimes with a real counter send it; the gate stops at `HARNESS_STOP_CAP`, default 1, and always re-verifies the check before claiming it is still red). A runtime that can only signal a binary continuation flag omits `loop_count` and is bounded at one continuation regardless of cap |
 | `session_start` | `session_start.phase` (`startup`, `resume`, or `compact`) |
 | `subagent_start` | `subagent_start` (optional `agent_type`, `agent_id` — no runtime exposes the child's task text, so the protocol does not carry it) |
 | `user_prompt_submit` | `prompt` (the user's submitted text, verbatim) |
