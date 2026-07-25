@@ -18,7 +18,7 @@ Classify the request first:
 - `HISTORY`: answer when, where, who, why, or which commit changed something.
 - `STATUS`: inspect branch, diff, or working-tree state without changing it.
 
-Do not commit, rebase, push, force-push, reset, stash-pop, or delete anything unless the user explicitly asked for that operation. If the request is only investigative, report findings and stop.
+Do not commit, rebase, push, force-push, reset, stash-pop, bisect, or delete anything unless the user explicitly asked for that operation. If the request is only investigative, report findings and stop.
 
 ## Ground truth
 
@@ -39,7 +39,8 @@ Missing upstream or missing `main`/`master` is normal. Fall back to the best ava
 
 > Worktree rule: this repo blocks feature commits in the primary checkout (see the
 > worktree guard). Do commit work in a linked worktree, not on a branch checked out in
-> the primary. `HARNESS_ALLOW_PRIMARY_COMMIT=1` is for a genuine hotfix only.
+> the primary. If the guard blocks you, that is the answer — do not search for or use
+> a bypass; report the block and let a human decide the exception.
 
 ## Commit mode
 
@@ -62,7 +63,10 @@ Final report: list commit hashes, messages, and any remaining uncommitted files.
 History rewriting is a shared-impact operation.
 
 - Never rebase or rewrite `main`, `master`, `dev`, release branches, or any protected branch unless the user explicitly named that exact operation.
-- If commits may already be pushed, ask before force-pushing. Use `--force-with-lease`, never plain `--force`.
+- Force-pushing rewrites remote history — never do it on your own judgment. Immediately
+  before the push, state the exact remote and branch and get explicit confirmation for
+  that specific push (a prior blanket approval does not count); otherwise report the
+  command you would run and stop. Use `--force-with-lease`, never plain `--force`.
 - If the worktree is dirty, preserve it intentionally before rebasing. Do not stash-pop over conflicts without checking what changed.
 - For fixups, prefer `git commit --fixup=<hash>` then `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`.
 - For conflicts, read the conflicting files and resolve by intent. Do not choose ours/theirs blindly.
@@ -79,7 +83,7 @@ Choose the tool by the question:
 - `git blame -L start,end -- file` — who last changed specific lines.
 - `git log --follow -- file` — history across renames for one file.
 - `git show <hash>` — inspect the commit that appears relevant.
-- `git bisect` — find the first bad commit when there is a deterministic pass/fail command and known good/bad bounds.
+- `git bisect` — find the first bad commit when there is a deterministic pass/fail command and known good/bad bounds. **State-changing**: it moves the checkout and can execute a supplied command, so gate it like a write — explicit user request, clean or deliberately preserved worktree, a user-approved test command, and `git bisect reset` as the recovery path.
 - `git reflog` — recover or explain recent local history movement.
 
 Always cite the exact evidence: commit hash, subject, file path, and line/diff context. If the evidence is ambiguous, say what remains unproven.

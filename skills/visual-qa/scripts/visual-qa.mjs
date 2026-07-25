@@ -1,5 +1,4 @@
-import { createRequire } from "node:module";
-var __require = /* @__PURE__ */ createRequire(import.meta.url);
+import { pathToFileURL } from "node:url";
 
 // packages/shared-skills/skills/visual-qa/scripts/cli.ts
 import { readFileSync } from "node:fs";
@@ -153,7 +152,8 @@ function parseHeader(data) {
     height: data.readUInt32BE(4),
     bitDepth: data[8] ?? 0,
     colorType,
-    channels: channelsForColorType(colorType)
+    channels: channelsForColorType(colorType),
+    interlace: data[12] ?? 0
   };
 }
 function paeth(a, b, c) {
@@ -274,6 +274,9 @@ function decodePng(buffer) {
   const header = parseHeader(ihdr.data);
   if (header.bitDepth !== 8) {
     throw new PngDecodeError(`unsupported bit depth ${header.bitDepth}`);
+  }
+  if (header.interlace !== 0) {
+    throw new PngDecodeError("unsupported interlaced PNG (Adam7); re-export without interlacing");
   }
   const idatChunks = chunks.filter((chunk) => chunk.type === "IDAT");
   if (idatChunks.length === 0) {
@@ -519,7 +522,10 @@ function main(argv) {
     process.exitCode = 1;
   }
 }
-if (__require.main == __require.module) {
+// ESM direct-run detection: createRequire's `main`/`module` are both undefined in
+// ESM, so the old `__require.main == __require.module` ran main() even on import.
+const directRun = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (directRun) {
   main(process.argv.slice(2));
 }
 export {

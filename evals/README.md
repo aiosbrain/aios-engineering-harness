@@ -14,6 +14,7 @@ for exactly what's shared vs. repo-specific.
 bash evals/guards.test.sh        # policy and destructive-command cases
 bash evals/conformance.test.sh   # native payloads and adapter behavior
 bash evals/install.test.sh       # four-runtime installer + non-destructive failure matrix
+bash evals/visual-qa.test.sh     # visual-qa script: import safety, image-diff, interlace reject
 python3 evals/evidence.test.py   # sanitized transcript and exit-code reconciliation
 bash evals/graders.test.sh       # deterministic scenario-grader regressions
 bash evals/runner.test.sh        # runner fault modes and five-scenario aggregate
