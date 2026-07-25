@@ -39,8 +39,8 @@ printf '%s' "$INPUT" | jq -e '
    elif .event == "subagent_start" then
      .protocol_version == "1.1" and
      (.subagent_start | type == "object") and
-     ((.subagent_start.agent_type // "") | type == "string") and
-     ((.subagent_start.agent_id // "") | type == "string")
+     (.subagent_start.agent_type == null or (.subagent_start.agent_type | type == "string")) and
+     (.subagent_start.agent_id == null or (.subagent_start.agent_id | type == "string"))
    else
      (.stop | type == "object") and
      (.stop.verification_loop_active | type == "boolean")

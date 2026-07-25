@@ -47,10 +47,10 @@ fi
 # Policy stdout (the action channel) and stderr (diagnostics) are captured
 # separately — they are different protocols and must never be mixed.
 ERRFILE=$(mktemp) || { echo "adapter: mktemp failed" >&2; exit 3; }
+trap 'rm -f "$ERRFILE"' EXIT
 OUTPUT=$(printf '%s' "$NORMALIZED" | "$SCRIPT_DIR/../hooks/$POLICY" 2>"$ERRFILE")
 STATUS=$?
 ERRORS=$(cat "$ERRFILE" 2>/dev/null || true)
-rm -f "$ERRFILE"
 
 if [ -n "${HARNESS_TRACE_FILE:-}" ]; then
   printf '%s' "$NORMALIZED" | "$SCRIPT_DIR/../hooks/trace-event.sh" "$POLICY" "$STATUS"

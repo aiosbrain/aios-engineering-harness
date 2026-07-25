@@ -43,6 +43,12 @@ CONSTITUTION="$ROOT/CONSTITUTION.md"
   exit 3
 }
 
+# Both markers must exist — with the end marker missing, the sed range would run
+# to EOF and silently inject far more than the digest.
+grep -q '<!-- agent-digest:start -->' "$CONSTITUTION" && grep -q '<!-- agent-digest:end -->' "$CONSTITUTION" || {
+  echo "inject-context: agent-digest start/end markers missing in CONSTITUTION.md" >&2
+  exit 3
+}
 DIGEST=$(sed -n '/<!-- agent-digest:start -->/,/<!-- agent-digest:end -->/p' "$CONSTITUTION" \
   | sed '1d;$d')
 [ -n "$DIGEST" ] || {

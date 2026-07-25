@@ -72,6 +72,11 @@ if printf '%s' "$OUT" | grep -q "Spec before code"; then
   ok "compact-phase session_start re-emits the digest"
 else bad "compact-phase re-injection"; fi
 
+PHASE=$(printf '%s' '{"session_id":"s1","source":"resume","cwd":"/tmp"}' | "$ROOT/adapters/claude-code/normalize.sh" session_start 2>/dev/null | jq -r '.session_start.phase')
+[ "$PHASE" = "resume" ] && ok "resume source normalizes to phase=resume" || bad "resume phase mapping (got '$PHASE')"
+PHASE=$(printf '%s' '{"session_id":"s1","source":"clear","cwd":"/tmp"}' | "$ROOT/adapters/claude-code/normalize.sh" session_start 2>/dev/null | jq -r '.session_start.phase')
+[ "$PHASE" = "startup" ] && ok "clear source normalizes to phase=startup" || bad "clear phase mapping (got '$PHASE')"
+
 echo "── action-envelope validation ─────────────────────────────"
 
 printf '%s' '{"protocol":"1.1","action":"context","text":"hello"}' | "$ROOT/hooks/validate-action.sh" >/dev/null 2>&1 \
@@ -96,6 +101,12 @@ if jq -cn --arg t "$BIG" '{protocol:"1.1",action:"context",text:$t}' | "$ROOT/ho
   bad "validate-action wrongly accepted an oversized action"
 else
   ok "validate-action rejects an action over the 8,000-byte cap"
+fi
+
+if printf '%s\n%s' '{"a":1}' '{"protocol":"1.1","action":"context","text":"legit"}' | "$ROOT/hooks/validate-action.sh" >/dev/null 2>&1; then
+  bad "validate-action wrongly accepted a multi-document stream"
+else
+  ok "validate-action rejects a multi-document JSON stream"
 fi
 
 echo "── run-hook fails closed on a malformed envelope ──────────"
@@ -128,7 +139,7 @@ COPY=$(make_copy no-digest)
 sed -i.bak 's/agent-digest:start/agent-digest:gone/; s/agent-digest:end/agent-digest:over/' "$COPY/CONSTITUTION.md"
 ERR=$(printf '%s' "$SS_CLAUDE" | "$COPY/adapters/run-hook.sh" claude-code session_start inject-context.sh 2>&1 >/dev/null)
 STATUS=$?
-if [ "$STATUS" -ne 0 ] && printf '%s' "$ERR" | grep -q "agent-digest block missing"; then
+if [ "$STATUS" -ne 0 ] && printf '%s' "$ERR" | grep -Eq "agent-digest (block|start/end markers) missing"; then
   ok "missing digest -> explicit named error, nonzero exit"
 else
   bad "missing digest (exit=$STATUS, err='${ERR:0:60}')"

@@ -20,16 +20,19 @@ INPUT=$(cat 2>/dev/null || true)
 
 # The 8,000-byte cap keeps every action below the strictest model-visible runtime
 # allowance (Codex ~2,500 tokens). utf8bytelength counts bytes, not code points.
-printf '%s' "$INPUT" | jq -e '
-  type == "object" and
-  .protocol == "1.1" and
-  (.action | IN("context", "continue")) and
-  (keys - ["protocol", "action", "text", "reason"] == []) and
-  (if .action == "context" then
-     (.text | type == "string" and length > 0 and utf8bytelength <= 8000)
-   else
-     (.reason | type == "string" and length > 0 and utf8bytelength <= 8000)
-   end)
+# Slurp (-s): stdin must be EXACTLY ONE document — a multi-document stream would
+# otherwise be validated per-document and echoed through whole.
+printf '%s' "$INPUT" | jq -es '
+  length == 1 and (.[0] |
+    type == "object" and
+    .protocol == "1.1" and
+    (.action | IN("context", "continue")) and
+    (keys - ["protocol", "action", "text", "reason"] == []) and
+    (if .action == "context" then
+       (.text | type == "string" and length > 0 and utf8bytelength <= 8000)
+     else
+       (.reason | type == "string" and length > 0 and utf8bytelength <= 8000)
+     end))
 ' >/dev/null 2>&1 || {
   echo "validate-action: malformed or oversized action envelope" >&2
   exit 3

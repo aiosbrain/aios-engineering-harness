@@ -210,7 +210,8 @@ for rt in "${WANT[@]}"; do
       # Cursor's GUARANTEED context path: a generated always-apply rule carrying the
       # agent-digest + skill index (the native sessionStart hook is additive only).
       # The rule is generated output, regenerated on every install — never hand-edit.
-      if ! CONTEXT_TEXT=$(printf '{"protocol_version":"1.1","event":"session_start","runtime":{"name":"cursor"},"cwd":"%s","session_start":{"phase":"startup"}}' "$REPO_ROOT" \
+      if ! CONTEXT_TEXT=$(jq -cn --arg cwd "$REPO_ROOT" \
+            '{protocol_version:"1.1",event:"session_start",runtime:{name:"cursor"},cwd:$cwd,session_start:{phase:"startup"}}' \
           | "$HARNESS_DIR/hooks/inject-context.sh" \
           | "$HARNESS_DIR/hooks/validate-action.sh" \
           | jq -r '.text'); then
