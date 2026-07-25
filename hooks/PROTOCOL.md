@@ -4,9 +4,9 @@ The protocol is the boundary between runtime adapters and portable policy. Runti
 adapters normalize their native payloads to one JSON object on stdin; scripts in
 `hooks/` must not parse Claude Code, Codex, or OpenCode payloads directly.
 
-Protocol `1.1` adds two lifecycle input events (`session_start`, `subagent_start`)
-and a policy **output action envelope**. `1.0` events remain valid unchanged; the
-new events require `protocol_version: "1.1"`.
+Protocol `1.1` adds three input events (`session_start`, `subagent_start`,
+`user_prompt_submit`) and a policy **output action envelope**. `1.0` events remain
+valid unchanged; all three new events require `protocol_version: "1.1"`.
 
 Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and optional
 `session_id`, `tool_name`, and `tool_id`. Event fields are:
@@ -19,6 +19,7 @@ Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and option
 | `stop` | `stop.verification_loop_active` |
 | `session_start` | `session_start.phase` (`startup`, `resume`, or `compact`) |
 | `subagent_start` | `subagent_start` (optional `agent_type`, `agent_id` — no runtime exposes the child's task text, so the protocol does not carry it) |
+| `user_prompt_submit` | `prompt` (the user's submitted text, verbatim) |
 
 Each path has an `action` (`add`, `update`, `delete`, `rename`, or `unknown`). A rename
 uses the destination as `path` and the source as `from`. The normative machine shape
@@ -31,8 +32,9 @@ means the event or local configuration could not be evaluated. Safety adapters m
 ## Output action envelope (1.1)
 
 Guard policies communicate by exit code only and print diagnostics to stderr.
-**Context policies** (`inject-context.sh`) additionally print exactly one JSON action
-envelope on stdout:
+**Context policies** (`inject-context.sh`, `route-skills.sh`) additionally print at
+most one JSON action envelope on stdout — empty stdout with exit `0` is a deliberate
+no-action (e.g. no trigger matched) and adapters emit nothing native for it:
 
 ```json
 {"protocol": "1.1", "action": "context", "text": "…injected context…"}

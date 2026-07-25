@@ -3,6 +3,12 @@ name: compound-learnings
 description: The closing step of every task — codify what was learned so the system gets better each use. Use after completing any task where the agent was corrected, a bug was found, a procedure was discovered, or friction repeated. Also on request ("capture this", "make sure we don't repeat that").
 source: Kieran Klaassen (compound engineering — the fourth step); Mitchell Hashimoto (mistake → guardrail reflex); Boris Cherny (CLAUDE.md as error-ledger)
 am_pattern: A1, C1
+triggers:
+  - lessons learned
+  - compound learnings
+  - postmortem
+  - post-mortem
+  - capture what we learned
 ---
 
 "The first three steps produce a feature; the fourth produces a system that builds

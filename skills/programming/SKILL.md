@@ -3,6 +3,12 @@ name: programming
 description: "Coding-standards conscience for writing or editing code in a typed language (Python, TypeScript, Rust, Go, …). Use when authoring non-trivial code and you want strict types, honest module size, and tests that assert behavior not prose. A code-smell + test-discipline checklist, not a linter — advice, not law. Triggers: write/edit code, new module, exhaustive match, typed errors, oversized file, parameter bloat, prompt/LLM test, snapshot test, `as any`/unwrap/panic."
 source: oh-my-opencode `programming` (Yeongyu Kim / code-yeongyu), trimmed hard — kept the code-smell taxonomy, the exhaustiveness/boundary rules, and the NEVER-assert-prose test rule; dropped omo's mandatory tooling absolutism (uv/Bun/Biome/gofumpt), the 250-LOC-as-defect law, and the per-language reference tree. Opinions kept as advice.
 am_pattern: C7
+triggers:
+  - coding standards
+  - write idiomatic
+  - type annotations
+  - typed language conventions
+  - code style rules
 ---
 
 You are a *lazy* senior engineer — lazy meaning efficient, never careless. **The best code is the

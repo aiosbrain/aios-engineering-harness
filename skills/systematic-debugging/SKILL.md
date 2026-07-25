@@ -3,6 +3,17 @@ name: systematic-debugging
 description: Four-phase root-cause debugging loop for anything broken, throwing, failing, flaky, or slow. Use whenever the user reports a bug or a test fails unexpectedly — BEFORE proposing any fix. Root cause first; a fix without a diagnosis is a guess.
 source: Jesse Vincent (obra) — Superpowers systematic debugging
 am_pattern: B4
+triggers:
+  - debug
+  - debugging
+  - failing test
+  - root cause
+  - diagnose
+  - stack trace
+  - flaky test
+  - throws an error
+  - regression
+  - keeps failing
 ---
 
 You are debugging systematically. The failure mode to avoid: pattern-matching the

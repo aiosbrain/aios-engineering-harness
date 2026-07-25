@@ -39,6 +39,12 @@ smoke-gated enhancement** (marker smoke passed on cursor-agent 2026.07.23,
 replaces the rule. `beforeSubmitPrompt` remains validation-only and is not used for
 injection. Injection failures never block a session.
 
+Skill routing on Cursor is **static-rule routing**: the generated rule also carries
+the literal trigger→skill map (`route-skills.sh --emit-map`), so the model matches
+triggers itself from the always-applied rule text. This is honestly weaker than the
+dynamic per-prompt injection Claude/Codex/OpenCode get and is never claimed as
+native dynamic injection.
+
 ## Install
 
 ```sh

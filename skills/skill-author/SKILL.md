@@ -3,6 +3,13 @@ name: skill-author
 description: Write or improve a SKILL.md so it actually triggers and actually changes agent behavior. Use when the user says "create a skill", "turn this into a skill", "why isn't this skill triggering", or when compound-learnings decides a lesson deserves a skill.
 source: Jesse Vincent (obra) — Superpowers skill-writing skill + pressure-testing; Anthropic skill-authoring guidance
 am_pattern: C1
+triggers:
+  - write a skill
+  - create a skill
+  - new skill
+  - skill.md
+  - improve this skill
+  - skill isn't triggering
 ---
 
 You are authoring a skill — a packaged procedure an agent loads when a task matches.

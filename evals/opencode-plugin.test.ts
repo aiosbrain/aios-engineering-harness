@@ -86,6 +86,69 @@ describe("OpenCode adapter normalization", () => {
     ).toThrow("no path")
   })
 
+  test("chat.message appends one routing pointer to the last text part", async () => {
+    const root = resolve(import.meta.dir, "..")
+    const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))
+    temporary.push(workspace)
+    const plugin = await HarnessGuards({
+      client: { session: { promptAsync: async () => ({}) } },
+      directory: workspace,
+      worktree: root,
+    } as never)
+    const parts = [
+      { id: "prt_1", type: "text", text: "please debug this failing test" },
+    ]
+    await plugin["chat.message"]?.(
+      { sessionID: "s1", messageID: "m1" } as never,
+      { message: { id: "m1" }, parts } as never,
+    )
+    expect(parts).toHaveLength(1) // appended to the existing part, never pushed
+    expect(parts[0].text).toContain("systematic-debugging")
+    expect(parts[0].text).toContain("<!-- aios-skill-route:systematic-debugging -->")
+    expect(parts[0].text).toContain(`${root}/skills/systematic-debugging/SKILL.md`)
+  })
+
+  test("chat.message is a no-op on no match, no text parts, and marker dedupe", async () => {
+    const root = resolve(import.meta.dir, "..")
+    const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))
+    temporary.push(workspace)
+    const plugin = await HarnessGuards({
+      client: { session: { promptAsync: async () => ({}) } },
+      directory: workspace,
+      worktree: root,
+    } as never)
+
+    const noMatch = [{ id: "prt_1", type: "text", text: "hello there, nothing special" }]
+    await plugin["chat.message"]?.(
+      { sessionID: "s1", messageID: "m1" } as never,
+      { message: { id: "m1" }, parts: noMatch } as never,
+    )
+    expect(noMatch[0].text).toBe("hello there, nothing special")
+
+    const noText: Array<{ id: string; type: string }> = [{ id: "prt_2", type: "file" }]
+    await expect(
+      plugin["chat.message"]?.(
+        { sessionID: "s1", messageID: "m2" } as never,
+        { message: { id: "m2" }, parts: noText } as never,
+      ),
+    ).resolves.toBeUndefined()
+
+    const deduped = [
+      {
+        id: "prt_3",
+        type: "text",
+        text: "debug this <!-- aios-skill-route:systematic-debugging --> again",
+      },
+    ]
+    await plugin["chat.message"]?.(
+      { sessionID: "s1", messageID: "m3" } as never,
+      { message: { id: "m3" }, parts: deduped } as never,
+    )
+    expect(deduped[0].text).toBe(
+      "debug this <!-- aios-skill-route:systematic-debugging --> again",
+    )
+  })
+
   test("native pre-tool hook blocks a secret addition", async () => {
     const root = resolve(import.meta.dir, "..")
     const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))

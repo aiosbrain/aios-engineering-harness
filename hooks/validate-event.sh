@@ -15,7 +15,7 @@ INPUT=$(cat 2>/dev/null || true)
 printf '%s' "$INPUT" | jq -e '
   type == "object" and
   (.protocol_version | IN("1.0", "1.1")) and
-  (.event | IN("pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start")) and
+  (.event | IN("pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit")) and
   (.runtime | type == "object") and
   (.runtime.name | IN("claude", "codex", "opencode", "cursor", "mock")) and
   (.cwd | type == "string" and length > 0) and
@@ -41,6 +41,9 @@ printf '%s' "$INPUT" | jq -e '
      (.subagent_start | type == "object") and
      (.subagent_start.agent_type == null or (.subagent_start.agent_type | type == "string")) and
      (.subagent_start.agent_id == null or (.subagent_start.agent_id | type == "string"))
+   elif .event == "user_prompt_submit" then
+     .protocol_version == "1.1" and
+     (.prompt | type == "string")
    else
      (.stop | type == "object") and
      (.stop.verification_loop_active | type == "boolean")

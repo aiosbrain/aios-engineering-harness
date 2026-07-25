@@ -8,7 +8,7 @@
   "properties": {
     "protocol_version": { "enum": ["1.0", "1.1"] },
     "event": {
-      "enum": ["pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start"]
+      "enum": ["pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit"]
     },
     "runtime": {
       "type": "object",
@@ -51,6 +51,7 @@
       }
     },
     "command": { "type": "string", "minLength": 1 },
+    "prompt": { "type": "string" },
     "stop": {
       "type": "object",
       "additionalProperties": false,
@@ -104,6 +105,13 @@
       "if": { "properties": { "event": { "const": "subagent_start" } } },
       "then": {
         "required": ["subagent_start"],
+        "properties": { "protocol_version": { "const": "1.1" } }
+      }
+    },
+    {
+      "if": { "properties": { "event": { "const": "user_prompt_submit" } } },
+      "then": {
+        "required": ["prompt"],
         "properties": { "protocol_version": { "const": "1.1" } }
       }
     }

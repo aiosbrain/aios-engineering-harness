@@ -3,6 +3,12 @@ name: tdd-fail-first
 description: Enforced RED-GREEN-REFACTOR test-driven development. Use when implementing any behavior change that can be expressed as a test — new features, bug fixes, edge cases. The test MUST fail first; a test that passes on first run proves nothing.
 source: Jesse Vincent (obra) — Superpowers enforced TDD
 am_pattern: B2, B4
+triggers:
+  - tdd
+  - test-driven
+  - fail first
+  - write the test first
+  - red-green
 ---
 
 You are implementing with fail-first TDD. The non-negotiable rule: **you must watch the

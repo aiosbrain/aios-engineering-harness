@@ -3,6 +3,12 @@ name: ast-grep
 description: "Use ast-grep (sg) for AST-aware code search and deterministic rewrites/codemods across many languages. Trigger when the target is syntax SHAPE, not text: find every function/call/class/import shaped like X, rewrite console.log to logger.info, strip `as any`, migrate require() to import, find empty catch blocks or missing await. Prefer this over rg/grep when the answer depends on the language's syntax tree; use rg for string contents, comments, filenames, or regex byte searches. For read-only structural queries you can also use the codebase graph (codebase-memory-mcp)."
 source: oh-my-opencode `ast-grep` (Yeongyu Kim / code-yeongyu), ported lean — the technique + the load-bearing gotchas, without the bundled Python helper (use `sg` directly)
 am_pattern: C4
+triggers:
+  - ast-grep
+  - structural search
+  - codemod
+  - syntax-aware
+  - rewrite across the codebase
 ---
 
 `sg` (also installed as `ast-grep`) parses your pattern as code and matches the syntax tree, so it

@@ -6,6 +6,7 @@ import {
   normalizeSessionStartEvent,
   normalizeStopEvent,
   normalizeToolEvent,
+  normalizeUserPromptEvent,
   type NormalizedEvent,
 } from "../normalize"
 
@@ -80,10 +81,58 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
     }
   }
 
+  // Routing channel: run route-skills.sh over the submitted prompt text; returns
+  // the validated pointer text or null (no match / any failure — never blocking).
+  const routeSkills = (prompt: string, sessionID: string): string | null => {
+    const event = normalizeUserPromptEvent(directory, sessionID, prompt)
+    const result = spawnSync("/bin/sh", [join(root, "hooks", "route-skills.sh")], {
+      cwd: event.cwd,
+      input: JSON.stringify(event),
+      encoding: "utf8",
+      env: process.env,
+      timeout: HOOK_TIMEOUT_MS,
+    })
+    if ((result.status ?? 3) !== 0) return null
+    const stdout = (result.stdout ?? "").trim()
+    if (!stdout) return null // no matching trigger — deliberate no-action
+    const validated = spawnSync("/bin/sh", [join(root, "hooks", "validate-action.sh")], {
+      input: stdout,
+      encoding: "utf8",
+      env: process.env,
+      timeout: HOOK_TIMEOUT_MS,
+    })
+    if ((validated.status ?? 3) !== 0) return null
+    try {
+      const action = JSON.parse(validated.stdout)
+      return action.action === "context" && typeof action.text === "string" ? action.text : null
+    } catch {
+      return null
+    }
+  }
+
   return {
     "experimental.chat.system.transform": async (input, output) => {
       const text = buildContext("startup", input.sessionID ?? "")
       if (text) output.system.push(text)
+    },
+
+    // Per-prompt skill routing: inspect the incoming user message's text parts and
+    // append one binding pointer BEFORE the model call. The pointer is appended to
+    // the message's last text part (a pushed synthetic part would need a server-
+    // generated `prt_…` id and fails schema validation otherwise). Child sessions
+    // run this same hook, so subagents self-route too. Marker dedupe lives in
+    // route-skills.sh (it sees the combined text, which includes any prior marker).
+    "chat.message": async (input, output) => {
+      const textParts = output.parts.filter(
+        (part): part is (typeof output.parts)[number] & { text: string } =>
+          "text" in part && typeof part.text === "string" && part.text.length > 0,
+      )
+      if (!textParts.length) return
+      const text = textParts.map((part) => part.text).join("\n")
+      const pointer = routeSkills(text, input.sessionID)
+      if (pointer) {
+        textParts[textParts.length - 1].text += `\n\n${pointer}`
+      }
     },
 
     "experimental.session.compacting": async (input, output) => {

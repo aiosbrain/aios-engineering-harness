@@ -81,6 +81,15 @@ case "$EVENT" in
       }
     ' 2>/dev/null) || exit 3
     ;;
+  user_prompt_submit)
+    NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "${PWD:-.}" '
+      {
+        protocol_version:"1.1", event:"user_prompt_submit", runtime:{name:"claude"},
+        cwd:(.cwd // $cwd), session_id:(.session_id // ""),
+        prompt:(.prompt // .user_prompt // "")
+      }
+    ' 2>/dev/null) || exit 3
+    ;;
   *)
     echo "claude adapter: unsupported event '$EVENT'" >&2
     exit 3

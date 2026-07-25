@@ -3,6 +3,12 @@ name: code-review
 description: Fresh-context review of a diff with severity-triaged findings (P1/P2/P3). Use when the user asks to "review" a change/PR/diff, or as the standard gate on any agent-authored change before merge. The reviewer must NOT be the session that wrote the code.
 source: Kieran Klaassen (compound engineering — parallel specialized review); AM C3 writer/reviewer split; AIOS consolidate-findings (fail-closed severity)
 am_pattern: C3, D4
+triggers:
+  - review this
+  - code review
+  - review the pr
+  - review the diff
+  - review my changes
 ---
 
 You are reviewing a diff you did not write. If you *did* write it in this session, say

@@ -3,6 +3,12 @@ name: refactor
 description: "Structured restructuring of EXISTING code — extract, split, rename, modernize, de-duplicate, move responsibilities — with zero behavior change and a test run after every step. Use when the task is to reshape working code (not add a feature, not the post-diff hygiene pass). Distinct from simplify-pass, which is a cheap one-pass cleanup of the hunks you just changed; refactor is a planned, multi-step restructure of code that already exists. Triggers: refactor, restructure, extract, split this file/function, modernize, de-duplicate, move X into Y."
 source: oh-my-opencode `refactor` (Yeongyu Kim / code-yeongyu), trimmed to the phase discipline; dropped the omo command-template, `call_omo_agent`/LSP/refactor-squad plumbing
 am_pattern: C7
+triggers:
+  - refactor
+  - restructure the code
+  - extract a function
+  - de-duplicate
+  - move responsibilities
 ---
 
 Refactoring changes structure, never behavior. The whole discipline is: **know what depends on the

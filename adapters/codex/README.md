@@ -47,6 +47,11 @@ message). Two honest limitations, measured 2026-07-25:
   file with a head/tail preview). `inject-context.sh` caps its output at 8,000 bytes
   and typical digest+index payloads are well under the limit.
 
+`UserPromptSubmit` additionally runs `route-skills.sh` (literal trigger→skill routing,
+one nested-envelope pointer max, marker dedupe — see the Claude adapter README for the
+exact semantics; they are identical). The `codex exec` project-hook limitation above
+applies to this event too.
+
 Run before rollout:
 
 ```bash
