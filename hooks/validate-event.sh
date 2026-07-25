@@ -14,8 +14,8 @@ INPUT=$(cat 2>/dev/null || true)
 
 printf '%s' "$INPUT" | jq -e '
   type == "object" and
-  .protocol_version == "1.0" and
-  (.event | IN("pre_edit", "pre_command", "post_edit", "stop")) and
+  (.protocol_version | IN("1.0", "1.1")) and
+  (.event | IN("pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start")) and
   (.runtime | type == "object") and
   (.runtime.name | IN("claude", "codex", "opencode", "cursor", "mock")) and
   (.cwd | type == "string" and length > 0) and
@@ -32,6 +32,15 @@ printf '%s' "$INPUT" | jq -e '
      (.paths | type == "array" and length > 0) and
      all(.paths[]; (.path | type == "string" and length > 0) and
        (.action | IN("add", "update", "delete", "rename", "unknown")))
+   elif .event == "session_start" then
+     .protocol_version == "1.1" and
+     (.session_start | type == "object") and
+     (.session_start.phase | IN("startup", "resume", "compact"))
+   elif .event == "subagent_start" then
+     .protocol_version == "1.1" and
+     (.subagent_start | type == "object") and
+     ((.subagent_start.agent_type // "") | type == "string") and
+     ((.subagent_start.agent_id // "") | type == "string")
    else
      (.stop | type == "object") and
      (.stop.verification_loop_active | type == "boolean")

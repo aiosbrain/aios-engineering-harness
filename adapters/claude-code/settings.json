@@ -32,6 +32,21 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code session_start inject-context.sh" }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" claude-code subagent_start inject-context.sh" }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",

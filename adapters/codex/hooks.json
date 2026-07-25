@@ -1,5 +1,29 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex session_start inject-context.sh",
+            "timeout": 30,
+            "statusMessage": "Injecting harness digest and skill index"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex subagent_start inject-context.sh",
+            "timeout": 30,
+            "statusMessage": "Injecting harness digest and skill index into subagent"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",

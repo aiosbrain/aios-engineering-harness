@@ -71,6 +71,16 @@ case "$EVENT" in
         stop:{verification_loop_active:((.loop_count // 0) > 0)}
       }' 2>/dev/null) || exit 3
     ;;
+  session_start)
+    # Cursor sessionStart has no startup/resume/compact discriminator; every
+    # invocation is normalized as a fresh startup injection.
+    NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "$CWD_DEFAULT" '
+      {
+        protocol_version:"1.1", event:"session_start", runtime:{name:"cursor"},
+        cwd:$cwd, session_id:(.conversation_id // ""),
+        session_start:{phase:"startup"}
+      }' 2>/dev/null) || exit 3
+    ;;
   *)
     echo "cursor adapter: unsupported event '$EVENT'" >&2
     exit 3

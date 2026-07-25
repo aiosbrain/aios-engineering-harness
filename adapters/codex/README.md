@@ -1,6 +1,6 @@
 # Adapter — OpenAI Codex
 
-> Last verified with Codex CLI 0.144.5 on 2026-07-17.
+> Last verified with Codex CLI 0.145.0 on 2026-07-25.
 
 Install the portable pack and native lifecycle wiring:
 
@@ -24,6 +24,23 @@ allow. `HARNESS_TRACE_FILE` is available only as an opt-in eval artifact.
 Codex's sandbox and approval policy remain the outer capability boundary. Hooks give
 specific repository-policy feedback but are not a replacement for OS isolation,
 managed requirements, or CI. Project hooks can also be skipped until trust is granted.
+
+## Context injection (SessionStart / SubagentStart)
+
+`hooks.json` wires `SessionStart` and `SubagentStart` to `inject-context.sh` (digest +
+skill index, protocol `1.1` `context` action), translated to the documented
+`{"hookSpecificOutput":{"hookEventName":...,"additionalContext":...}}` envelope. The
+contract parse was live-verified on 0.145.0 (Codex injects the text as a developer
+message). Two honest limitations, measured 2026-07-25:
+
+- **`codex exec` 0.145.0 does not load project-level `.codex/hooks.json` SessionStart
+  hooks at all** (0/13 test deliveries; the hook process is never spawned, silently),
+  regardless of `--dangerously-bypass-hook-trust` or `trust_level`. Interactive Codex
+  honors project hooks after `/hooks` review. For headless runs, pass the hook at the
+  user layer, e.g. `codex exec -c 'hooks.SessionStart=[{hooks=[{type="command",command="..."}]}]'`.
+- Model-visible hook output is capped at ~2,500 tokens per entry (overflow spills to a
+  file with a head/tail preview). `inject-context.sh` caps its output at 8,000 bytes
+  and typical digest+index payloads are well under the limit.
 
 Run before rollout:
 

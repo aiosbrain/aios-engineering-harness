@@ -58,6 +58,8 @@ jobs:
         run: bash evals/conformance.test.sh
       - name: codex-driver.test.sh
         run: bash evals/codex-driver.test.sh
+      - name: inject-context.test.sh
+        run: bash evals/inject-context.test.sh
       - name: evidence.test.py
         run: python3 evals/evidence.test.py
 

@@ -26,6 +26,14 @@ the portable verification gate. A failure injects one continuation through
 `client.session.promptAsync`; a per-session marker prevents recursive continuation.
 This is intentionally documented as weaker than Claude Code/Codex native Stop hooks.
 
+Context injection: the plugin also implements `experimental.chat.system.transform`
+(appends the CONSTITUTION agent-digest + skill index from `inject-context.sh` to the
+system prompt — live-verified on 1.18.4, 2026-07-25) and
+`experimental.session.compacting` (re-injects the same digest into the compaction
+context so it survives compaction). The action envelope is validated with
+`hooks/validate-action.sh` before use; any injection failure is silent context loss,
+never a blocked session. Both hooks exist in the installed plugin types (1.4.8).
+
 The starter config uses current `permission` entries for read-only reviewers. The
 legacy per-agent `tools` booleans were deprecated in OpenCode 1.1.1.
 
