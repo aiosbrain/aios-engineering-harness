@@ -4,7 +4,7 @@ The reference runtime for this pack. Installation from your repo root:
 
 ```bash
 # 1. Vendor the pack (or add it as a plain directory — no submodules needed)
-git clone <this-repo> .harness && rm -rf .harness/.git
+git clone https://github.com/aiosbrain/aios-engineering-harness .harness && rm -rf .harness/.git
 
 # 2. Skills + agents into Claude Code's native locations
 mkdir -p .claude/skills .claude/agents

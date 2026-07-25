@@ -61,7 +61,7 @@ After vendoring, run the installer from your repo root. It is idempotent, auto-d
 (it writes `<file>.harness-incoming` for you to merge):
 
 ```bash
-git clone <this-repo> .harness && rm -rf .harness/.git
+git clone https://github.com/aiosbrain/aios-engineering-harness .harness && rm -rf .harness/.git
 .harness/install.sh            # or: --all, or: --runtime cursor --runtime codex
 # then: edit .harness/check (your real gate) and fill the AGENTS.md TODOs
 ```
@@ -73,7 +73,7 @@ single runtime by hand:
 
 ```bash
 # from your repo root
-git clone <this-repo> .harness && rm -rf .harness/.git
+git clone https://github.com/aiosbrain/aios-engineering-harness .harness && rm -rf .harness/.git
 # The manual flow is seed-only: abort if these destinations already exist, then
 # merge deliberately instead of overwriting user-managed runtime files.
 test ! -e .claude/skills || { echo ".claude/skills exists; merge manually" >&2; exit 1; }
@@ -102,6 +102,10 @@ the guards fire. **Codex, OpenCode, and Cursor are first-class too** — each ha
 adapter under `adapters/{codex,opencode,cursor}/` (merge its config the same way; never
 overwrite an existing `.codex/hooks.json` / `opencode.json` / `.cursor/hooks.json`). Full
 per-stack instructions: [docs/adopt-any-stack.md](docs/adopt-any-stack.md).
+
+**Zero-effort install:** copy [BOOTSTRAP.md](BOOTSTRAP.md) into any coding agent
+(Claude Code, Codex, OpenCode, or Cursor) and the agent itself will clone the harness,
+run `.harness/install.sh`, and fill in the blanks — no manual steps.
 
 ## Design principles
 
