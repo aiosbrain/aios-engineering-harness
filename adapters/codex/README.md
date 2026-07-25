@@ -5,11 +5,16 @@
 Install the portable pack and native lifecycle wiring:
 
 ```bash
-git clone <this-repo> .harness && rm -rf .harness/.git
+git clone https://github.com/aiosbrain/aios-engineering-harness .harness && rm -rf .harness/.git
 mkdir -p .agents/skills .codex
 cp -R .harness/skills/. .agents/skills/
+cp .harness/agents/*.md .agents/
 cp .harness/adapters/codex/hooks.json .codex/hooks.json
+chmod +x .harness/hooks/*.sh .harness/adapters/run-hook.sh \
+  .harness/adapters/codex/normalize.sh
 cp .harness/AGENTS.md ./AGENTS.md
+cp .harness/CONSTITUTION.md ./CONSTITUTION.md
+printf 'make lint && make test\n' > .harness/check   # your repo's real check command
 ```
 
 Codex project hooks require a trusted project and explicit review of changed hook

@@ -4,12 +4,15 @@ OpenCode uses the same portable policies through a TypeScript plugin. Install fr
 adopting repository:
 
 ```bash
-git clone <this-repo> .harness && rm -rf .harness/.git
+git clone https://github.com/aiosbrain/aios-engineering-harness .harness && rm -rf .harness/.git
 mkdir -p .opencode/plugins .opencode/skills
 cp .harness/adapters/opencode/plugin/harness.ts .opencode/plugins/harness.ts
 cp .harness/adapters/opencode/normalize.ts .opencode/normalize.ts
 cp -R .harness/skills/. .opencode/skills/
+cp .harness/AGENTS.md ./AGENTS.md
+cp .harness/CONSTITUTION.md ./CONSTITUTION.md
 # merge adapters/opencode/opencode.json into the project config
+printf 'make lint && make test\n' > .harness/check   # your repo's real check command
 ```
 
 Requirements: OpenCode, POSIX shell, and `jq`. Pin the OpenCode version during team
