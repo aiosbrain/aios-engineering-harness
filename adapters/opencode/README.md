@@ -25,8 +25,13 @@ normalization or policy failure throws and prevents the pre-tool call. Formattin
 always non-blocking.
 
 OpenCode documents `session.idle`, not a blocking Stop event. On idle the plugin runs
-the portable verification gate. A failure injects one continuation through
-`client.session.promptAsync`; a per-session marker prevents recursive continuation.
+the portable verification gate. A red check injects one skill-anchored continuation
+(naming `verify-change` + `systematic-debugging` by absolute path, with the agent
+digest and the failed command's capped output tail) through
+`client.session.promptAsync`, tracked by a bounded per-session counter that is
+cleared on success, on error, and on `session.deleted`; the portable gate enforces
+the cap via `stop.loop_count` (`HARNESS_STOP_CAP`, default 1) and at the cap allows
+the stop with an honest still-red note. Aborted/errored stops are never continued.
 This is intentionally documented as weaker than Claude Code/Codex native Stop hooks.
 
 Skill routing: the `chat.message` hook inspects the incoming user message's text

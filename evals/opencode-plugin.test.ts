@@ -260,7 +260,59 @@ describe("OpenCode adapter normalization", () => {
     } as never)
     const idle = { event: { type: "session.idle", properties: { sessionID: "s1" } } } as never
     await plugin.event?.(idle)
-    await expect(plugin.event?.(idle)).rejects.toThrow("check is failing")
+    // Second idle at the cap: the gate allows the stop with an honest still-red
+    // note, which the plugin surfaces terminally (and clears the counter).
+    await expect(plugin.event?.(idle)).rejects.toThrow("still failing")
     expect(prompts).toBe(1)
+  })
+
+  test("session.idle continuation counter clears on session.deleted", async () => {
+    const root = resolve(import.meta.dir, "..")
+    const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))
+    temporary.push(workspace)
+    execFileSync("git", ["init", "-q", workspace])
+    mkdirSync(join(workspace, ".harness"))
+    writeFileSync(join(workspace, ".harness", "check"), "false\n")
+    let prompts = 0
+    const plugin = await HarnessGuards({
+      client: { session: { promptAsync: async () => void prompts++ } },
+      directory: workspace,
+      worktree: root,
+    } as never)
+    const idle = { event: { type: "session.idle", properties: { sessionID: "s1" } } } as never
+    await plugin.event?.(idle) // count -> 1
+    await plugin.event?.({
+      event: { type: "session.deleted", properties: { info: { id: "s1" } } },
+    } as never) // counter cleared
+    await plugin.event?.(idle) // fresh session state: continues again, no throw
+    expect(prompts).toBe(2)
+  })
+
+  test("session.idle continuation names both anchor skills and the digest", async () => {
+    const root = resolve(import.meta.dir, "..")
+    const workspace = mkdtempSync(join(tmpdir(), "harness-opencode-"))
+    temporary.push(workspace)
+    execFileSync("git", ["init", "-q", workspace])
+    mkdirSync(join(workspace, ".harness"))
+    writeFileSync(join(workspace, ".harness", "check"), "false\n")
+    let captured = ""
+    const plugin = await HarnessGuards({
+      client: {
+        session: {
+          promptAsync: async (options: { body: { parts: Array<{ text: string }> } }) => {
+            captured = options.body.parts[0].text
+          },
+        },
+      },
+      directory: workspace,
+      worktree: root,
+    } as never)
+    await plugin.event?.({
+      event: { type: "session.idle", properties: { sessionID: "s2" } },
+    } as never)
+    expect(captured).toContain(`${root}/skills/verify-change/SKILL.md`)
+    expect(captured).toContain(`${root}/skills/systematic-debugging/SKILL.md`)
+    expect(captured).toContain("Spec before code")
+    expect(captured).toContain("Check command:")
   })
 })

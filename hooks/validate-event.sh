@@ -46,7 +46,9 @@ printf '%s' "$INPUT" | jq -e '
      (.prompt | type == "string")
    else
      (.stop | type == "object") and
-     (.stop.verification_loop_active | type == "boolean")
+     (.stop.verification_loop_active | type == "boolean") and
+     (.stop.stop_status == null or (.stop.stop_status | IN("ok", "failed", "aborted", "error"))) and
+     (.stop.loop_count == null or (.stop.loop_count | type == "number" and . >= 0 and floor == .))
    end)
 ' >/dev/null 2>&1 || {
   echo "validate-event: malformed or unsupported protocol event" >&2

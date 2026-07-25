@@ -52,11 +52,17 @@ case "$EVENT" in
     ' 2>/dev/null) || exit 3
     ;;
   stop)
+    # Claude fires Stop only for completed turns (an aborted session never reaches
+    # the hook), so stop_status is "ok"; loop_count derives from stop_hook_active.
     NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "${PWD:-.}" '
       {
         protocol_version:"1.0", event:"stop", runtime:{name:"claude"},
         cwd:(.cwd // $cwd), session_id:(.session_id // ""),
-        stop:{verification_loop_active:(.stop_hook_active // false)}
+        stop:{
+          verification_loop_active:(.stop_hook_active // false),
+          stop_status:"ok",
+          loop_count:(if (.stop_hook_active // false) then 1 else 0 end)
+        }
       }
     ' 2>/dev/null) || exit 3
     ;;
