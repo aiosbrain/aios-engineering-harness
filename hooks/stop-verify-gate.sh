@@ -76,7 +76,7 @@ STATUS=$?
 [ "$STATUS" -eq 0 ] && exit 0
 
 if [ "$AT_CAP" -eq 1 ]; then
-  echo "stop-verify-gate: check still failing after $LOOP_COUNT continuation(s) (cap $STOP_CAP); allowing stop for human review. Do not report this work as done." >&2
+  echo "stop-verify-gate: check still failing after $LOOP_COUNT continuation(s) (bound reached); allowing stop for human review. Do not report this work as done." >&2
   exit 0
 fi
 
@@ -101,12 +101,17 @@ if [ -f "$CONSTITUTION" ]; then
   DIGEST=$(sed -n '/<!-- agent-digest:start -->/,/<!-- agent-digest:end -->/p' "$CONSTITUTION" | sed '1d;$d')
 fi
 
-# Byte-capped tail with control characters stripped (keep \n\t) so the reason is
-# always JSON-safe and bounded no matter what the check printed.
+# Byte-capped tail with control characters stripped (keeping \n, \t, and \r) so
+# the reason is always JSON-safe and bounded no matter what the check printed.
 TAIL=$(printf '%s\n' "$OUTPUT" | tail -c "$TAIL_CAP" | tr -d '\000-\010\013\014\016-\037\177')
 
+# The check command is repo-author text but unbounded; truncate it so the reason
+# can never overflow the 8,000-byte action cap (which would silently downgrade
+# the skill-anchored continuation to a generic could-not-evaluate).
+CHECK_CMD_SHOWN=$(printf '%.512s' "$CHECK_CMD")
+
 REASON="The repository verification gate is red; the task is not done.
-Check command: $CHECK_CMD (exit $STATUS)
+Check command: $CHECK_CMD_SHOWN (exit $STATUS)
 Re-read these skills in full before continuing:
 - $VERIFY_SKILL
 - $DEBUG_SKILL
