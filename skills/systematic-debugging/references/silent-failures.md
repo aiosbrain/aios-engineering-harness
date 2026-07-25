@@ -31,7 +31,7 @@ Silent-failure signatures to check before trusting a green run:
 | `except Exception: pass` / bare `except: pass` | Discards every error, including `KeyboardInterrupt` |
 | `logging.exception(...)` with no handler attached | Writes nowhere |
 | `asyncio.create_task(coro)` without storing the task | Task GC'd before completion; the exception is eaten at gc time |
-| `asyncio.gather(t1, t2)` | Raises the *first* exception and cancels the rest — use `return_exceptions=True` to see them all |
+| `asyncio.gather(t1, t2)` | Propagates the *first* exception while the other awaitables keep running unobserved (they are **not** cancelled) — use `return_exceptions=True` to see every outcome |
 
 Tools: `PYTHONASYNCIODEBUG=1 python script.py` surfaces un-awaited coroutines and slow callbacks.
 For a hung process, `py-spy dump --pid <pid>` prints every thread's stack right now (no breakpoints,

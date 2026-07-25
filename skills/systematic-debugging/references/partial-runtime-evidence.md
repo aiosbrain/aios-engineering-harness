@@ -14,15 +14,19 @@ about how the *real* code behaves. If you can mock cleanly and that still answer
 ## The hierarchy of partial evidence (strongest first)
 
 - **Tier 1 — pre-send / post-receive logs.** If the code logs the assembled request *before*
-  transmitting (`Building request: …`, `payload: {…}`), that's ground truth for everything except
-  wire-level bytes. Maximize debug logging (`APP_DEBUG=1 APP_LOG_LEVEL=debug …`) and read it. ~95% of truth.
+  transmitting (`Building request: …`, `payload: {…}`), that's strong evidence for request
+  *content* — though not for wire-level bytes, and only for what that logger actually emitted.
+  Turn up debug logging (`APP_DEBUG=1 APP_LOG_LEVEL=debug …`) and read it — but treat those logs
+  as sensitive: they can capture Authorization headers, API keys, cookies, and customer data.
+  Redact before sharing or storing them, keep them out of commits, and don't enable broad debug
+  logging in shared/production environments.
 - **Tier 2 — local interception (proxy/shim).** Run the real binary against `mitmproxy`
   (`HTTPS_PROXY=… SSL_CERT_FILE=…`) or an `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES` shim that logs the
   payload and returns a canned response. Wire-level ground truth, if the target honors the proxy.
 - **Tier 3 — static extraction × runtime fingerprint cross-check.** Can't send at all? Cross-check
   static reading against what the binary *does* do offline: the request it builds (Tier 1), a state
-  file it writes, its User-Agent / `--version` build metadata. Two disjoint signals that agree ≈ one
-  full observation.
+  file it writes, its User-Agent / `--version` build metadata. Two disjoint signals that agree
+  substantially raise confidence — but still fall short of a direct observation; say so.
 - **Tier 4 — contrastive runtime under different inputs.** If input A runs (free tier) but B doesn't
   (paid), run A, capture its logs, and verify B shares A's request-building path with only the
   model/endpoint differing.
@@ -59,5 +63,7 @@ verification should attempt.
 | "The mock returns what I wrote, so it's fine" | tautology — loops your assumption back | Tier 2 proxy, or Tier 3 cross-check |
 | "The dashboard shows it worked" | often only a status code | combine with Tier 1 |
 
-Clean up when done: kill the proxy (`pkill -f mitmproxy`), remove debug logs and shim libs, and
+Clean up when done: kill the proxy by the PID you captured when starting it
+(`mitmproxy … & PROXY_PID=$!` → `kill "$PROXY_PID"` — never `pkill -f`, which can hit unrelated
+processes), remove debug logs and shim libs, and
 `unset` any `HTTPS_PROXY`/`APP_DEBUG`/… you exported so nothing persists into later runs.

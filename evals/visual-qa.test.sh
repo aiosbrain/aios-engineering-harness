@@ -20,7 +20,8 @@ report() {
   fi
 }
 
-command -v node >/dev/null 2>&1 || { echo "SKIP: node not available"; exit 0; }
+# This is a deterministic floor: a missing interpreter is a failure, not a skip.
+command -v node >/dev/null 2>&1 || { echo "FAIL: node is required for visual-qa.test.sh"; exit 1; }
 
 SCRIPT="$ROOT/skills/visual-qa/scripts/visual-qa.mjs"
 
@@ -76,10 +77,25 @@ writeFileSync(out, Buffer.concat([
 ]));
 EOF
 
-node "$TMP/make-png.mjs" "$TMP/ref.png" ff0000 0
-node "$TMP/make-png.mjs" "$TMP/act.png" ff0000 0
-node "$TMP/make-png.mjs" "$TMP/other.png" 00ff00 0
-node "$TMP/make-png.mjs" "$TMP/interlaced.png" ff0000 1
+# Fail closed if any fixture cannot be generated.
+for spec in "ref.png ff0000 0" "act.png ff0000 0" "other.png 00ff00 0" "interlaced.png ff0000 1"; do
+  set -- $spec
+  if ! node "$TMP/make-png.mjs" "$TMP/$1" "$2" "$3" || [ ! -s "$TMP/$1" ]; then
+    echo "FAIL: could not generate fixture $1"
+    exit 1
+  fi
+done
+
+# JSON-parse helper: read a numeric field from the CLI's stdout (formatting-independent).
+json_field() {  # json_field <json> <field>
+  printf '%s' "$1" | node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const data = JSON.parse(readFileSync(0, "utf8"));
+    const value = data[process.argv[1]];
+    if (typeof value !== "number") { process.exit(1); }
+    console.log(value);
+  ' "$2"
+}
 
 # 1. Importing the module must not run main() (no stdout, exit 0).
 IMPORT_OUT=$(node --input-type=module -e "await import('file://$SCRIPT'); " 2>&1)
@@ -87,18 +103,19 @@ IMPORT_OUT=$(node --input-type=module -e "await import('file://$SCRIPT'); " 2>&1
 report "import does not execute main()" $?
 
 # 2. Direct run still works: identical images diff to zero.
-DIRECT_OUT=$(node "$SCRIPT" image-diff "$TMP/ref.png" "$TMP/act.png" 2>&1)
-[ $? -eq 0 ] && printf '%s' "$DIRECT_OUT" | grep -q '"diffPixels": 0,'
+DIRECT_OUT=$(node "$SCRIPT" image-diff "$TMP/ref.png" "$TMP/act.png" 2>&1) &&
+  [ "$(json_field "$DIRECT_OUT" diffPixels)" = "0" ]
 report "direct run diffs identical images to zero" $?
 
-# 3. Direct run detects a real difference (nonzero ratio).
-DIFF_OUT=$(node "$SCRIPT" image-diff "$TMP/ref.png" "$TMP/other.png" 2>&1)
-[ $? -eq 0 ] && ! printf '%s' "$DIFF_OUT" | grep -q '"diffPixels": 0,'
+# 3. Direct run detects a real difference (nonzero pixel count).
+DIFF_OUT=$(node "$SCRIPT" image-diff "$TMP/ref.png" "$TMP/other.png" 2>&1) &&
+  DIFF_PIXELS="$(json_field "$DIFF_OUT" diffPixels)" &&
+  [ -n "$DIFF_PIXELS" ] && [ "$DIFF_PIXELS" -gt 0 ]
 report "direct run reports a nonzero diff for different images" $?
 
 # 4. Interlaced PNG is rejected with an explicit error, not garbled metrics.
 INTERLACED_OUT=$(node "$SCRIPT" image-diff "$TMP/interlaced.png" "$TMP/act.png" 2>&1)
-[ $? -ne 0 ] && printf '%s' "$INTERLACED_OUT" | grep -qi "interlaced"
+[ $? -ne 0 ] && printf '%s' "$INTERLACED_OUT" | grep -q "unsupported interlaced PNG"
 report "interlaced PNG is rejected explicitly" $?
 
 echo "visual-qa.test.sh: $PASS passed, $FAIL failed"
