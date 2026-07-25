@@ -69,6 +69,10 @@ OUT=$(route "$ROOT" "$(ev 'debug this <!-- aios-skill-route:refactor --> now')")
 printf '%s' "$OUT" | jq -e '.text | contains("systematic-debugging")' >/dev/null 2>&1 \
   && ok "marker for a DIFFERENT skill does not suppress routing" || bad "cross-skill marker suppressed routing"
 
+OUT=$(route "$ROOT" "$(ev 'debug the aios-skill-route:systematic-debugging-notes doc please')")
+printf '%s' "$OUT" | jq -e '.text | contains("systematic-debugging")' >/dev/null 2>&1 \
+  && ok "plain text resembling a marker does not suppress routing (exact-marker dedupe)" || bad "lookalike text suppressed routing"
+
 echo "── priority, ties, literals (synthetic tree) ──────────────"
 
 COPY=$(make_copy prio)
@@ -123,6 +127,31 @@ fi
 "$ROOT/hooks/route-skills.sh" --validate >/dev/null 2>&1 \
   && ok "validator passes every real skill file" || bad "real-tree trigger validation"
 
+COPY=$(make_copy nonscalar)
+mkdir -p "$COPY/skills/nested"
+printf -- '---\nname: nested\ndescription: Nested map entries. One sentence.\ntriggers:\n  - name: code-review\n  - [review]\n  - |\n---\nbody\n' > "$COPY/skills/nested/SKILL.md"
+"$COPY/hooks/route-skills.sh" --validate >/dev/null 2>&1 \
+  && bad "validator passed non-scalar trigger entries" \
+  || ok "validator rejects non-scalar trigger entries (maps/flow/block scalars)"
+OUT=$(route "$COPY" "$(ev 'please do a code-review of review [review] things')")
+[ -z "$OUT" ] && ok "non-scalar entries never become routable triggers" || bad "non-scalar entry routed (got '${OUT:0:60}')"
+
+COPY=$(make_copy crlf)
+mkdir -p "$COPY/skills/windowsy"
+printf -- '---\r\nname: windowsy\r\ndescription: CRLF checkout. One sentence.\r\ntriggers:\r\n  - crlf trigger phrase\r\n---\r\nbody\r\n' > "$COPY/skills/windowsy/SKILL.md"
+"$COPY/hooks/route-skills.sh" --validate >/dev/null 2>&1 \
+  && ok "validator accepts a CRLF SKILL.md" || bad "CRLF file failed validation"
+OUT=$(route "$COPY" "$(ev 'the crlf trigger phrase appears here')")
+printf '%s' "$OUT" | jq -e '.text | contains("windowsy")' >/dev/null 2>&1 \
+  && ok "CRLF-file triggers still route (trailing CR stripped)" || bad "CRLF trigger dead (got '${OUT:0:50}')"
+
+COPY=$(make_copy tabby)
+mkdir -p "$COPY/skills/tabby"
+printf -- '---\nname: tabby\ndescription: Tab trigger. One sentence.\ntriggers:\n  - has\ttab\n---\nbody\n' > "$COPY/skills/tabby/SKILL.md"
+"$COPY/hooks/route-skills.sh" --validate >/dev/null 2>&1 \
+  && bad "validator passed a trigger containing a TAB" \
+  || ok "validator rejects tab/non-printable-ASCII trigger characters"
+
 COPY=$(make_copy inline)
 mkdir -p "$COPY/skills/inline"
 printf -- '---\nname: inline\ndescription: Inline form. One sentence.\ntriggers: [a, b]\n---\nbody\n' > "$COPY/skills/inline/SKILL.md"
@@ -138,7 +167,7 @@ ln -s "$OUTSIDE/SKILL.md" "$COPY/skills/escaped/SKILL.md"
 OUT=$(route "$COPY" "$(ev 'debug this now')")
 [ -z "$OUT" ] && ok "symlink-escaping skill is never routed to" || bad "symlink escape routed (got '${OUT:0:60}')"
 
-BIGPROMPT=$(printf 'x%.0s' $(seq 1 33000))
+BIGPROMPT=$(head -c 33000 /dev/zero | tr '\0' 'x')
 OUT=$(route "$ROOT" "$(ev "debug $BIGPROMPT")")
 [ -z "$OUT" ] && ok "prompt above the byte cap is not scanned (no action)" || bad "oversized prompt scanned"
 
@@ -153,8 +182,8 @@ printf '%s' "$OUT" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubm
   && ok "claude user_prompt_submit -> nested hookSpecificOutput envelope" || bad "claude UPS envelope"
 
 OUT=$(printf '%s' '{"session_id":"s1","prompt":"debug this failing test","cwd":"/tmp"}' | "$ROOT/adapters/run-hook.sh" codex user_prompt_submit route-skills.sh 2>/dev/null)
-printf '%s' "$OUT" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit"' >/dev/null 2>&1 \
-  && ok "codex user_prompt_submit -> nested hookSpecificOutput envelope" || bad "codex UPS envelope"
+printf '%s' "$OUT" | jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit" and (.hookSpecificOutput.additionalContext | contains("systematic-debugging") and contains("aios-skill-route"))' >/dev/null 2>&1 \
+  && ok "codex user_prompt_submit -> nested envelope carrying the routed pointer" || bad "codex UPS envelope content"
 
 OUT=$(printf '%s' '{"session_id":"s1","prompt":"no trigger here at all","cwd":"/tmp"}' | "$ROOT/adapters/run-hook.sh" claude-code user_prompt_submit route-skills.sh 2>/dev/null)
 STATUS=$?

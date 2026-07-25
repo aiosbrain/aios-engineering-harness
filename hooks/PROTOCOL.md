@@ -4,9 +4,9 @@ The protocol is the boundary between runtime adapters and portable policy. Runti
 adapters normalize their native payloads to one JSON object on stdin; scripts in
 `hooks/` must not parse Claude Code, Codex, or OpenCode payloads directly.
 
-Protocol `1.1` adds two lifecycle input events (`session_start`, `subagent_start`)
-and a policy **output action envelope**. `1.0` events remain valid unchanged; the
-new events require `protocol_version: "1.1"`.
+Protocol `1.1` adds three input events (`session_start`, `subagent_start`,
+`user_prompt_submit`) and a policy **output action envelope**. `1.0` events remain
+valid unchanged; all three new events require `protocol_version: "1.1"`.
 
 Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and optional
 `session_id`, `tool_name`, and `tool_id`. Event fields are:

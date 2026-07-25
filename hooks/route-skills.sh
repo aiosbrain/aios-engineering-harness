@@ -31,9 +31,13 @@ command -v jq >/dev/null 2>&1 || {
 SCRIPT_DIR=$(CDPATH= cd -P -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -P -- "$SCRIPT_DIR/.." && pwd)
 
-# extract_triggers <file> — print one trigger literal per line (quotes stripped).
-extract_triggers() {
+# raw_trigger_items <file> — every "- item" line under triggers:, unfiltered.
+# CRLF is stripped per line (a Windows checkout must not silently kill routing);
+# frontmatter only counts when the opening fence is LINE 1 (no body smuggling).
+raw_trigger_items() {
   head -n 80 "$1" | awk '
+    { sub(/\r$/, "") }
+    NR == 1 && $0 !~ /^---[[:space:]]*$/ { exit }
     /^---[[:space:]]*$/ { n++; next }
     n >= 2 { exit }
     n == 1 {
@@ -41,19 +45,45 @@ extract_triggers() {
       if (t == 1) {
         if ($0 ~ /^[[:space:]]+-[[:space:]]*[^[:space:]]/) {
           sub(/^[[:space:]]+-[[:space:]]*/, "")
-          gsub(/^["'\''"]|["'\''"]$/, "")
           print
         } else if ($0 !~ /^[[:space:]]*(#.*)?$/) { t = 0 }
       }
     }'
 }
 
+# extract_triggers <file> — only PLAIN-SCALAR literals (quotes stripped). Nested
+# maps (`- name: x`), flow collections (`- [a]`), block scalars (`- |`), and YAML
+# anchors/aliases are NOT literal phrases and never become triggers.
+extract_triggers() {
+  raw_trigger_items "$1" | awk '
+    /^[\[{|>&*]/ { next }
+    /:[[:space:]]/ { next }
+    /:$/ { next }
+    {
+      gsub(/^["'\''"]|["'\''"]$/, "")
+      if ($0 != "") print
+    }'
+}
+
 # has_triggers_key <file> — 0 when the frontmatter declares a triggers: key at all.
 has_triggers_key() {
   head -n 80 "$1" | awk '
+    { sub(/\r$/, "") }
+    NR == 1 && $0 !~ /^---[[:space:]]*$/ { exit 1 }
     /^---[[:space:]]*$/ { n++; next }
-    n >= 2 { exit 1 }
+    n >= 2 { exit (found ? 0 : 1) }
     n == 1 && /^triggers:/ { found = 1; exit }
+    END { exit found ? 0 : 1 }'
+}
+
+# has_inline_triggers <file> — 0 when the FRONTMATTER (only) uses the inline form.
+has_inline_triggers() {
+  head -n 80 "$1" | awk '
+    { sub(/\r$/, "") }
+    NR == 1 && $0 !~ /^---[[:space:]]*$/ { exit 1 }
+    /^---[[:space:]]*$/ { n++; next }
+    n >= 2 { exit (found ? 0 : 1) }
+    n == 1 && /^triggers:[[:space:]]*\[/ { found = 1; exit }
     END { exit found ? 0 : 1 }'
 }
 
@@ -86,14 +116,24 @@ if [ "${1:-}" = "--validate" ]; then
       BAD=1
       continue
     fi
-    if head -n 80 "$f" | grep -Eq '^triggers:[[:space:]]*\['; then
+    if has_inline_triggers "$f"; then
       echo "route-skills: $NAME: inline [..] triggers form is not allowed — use a block list" >&2
       BAD=1
       continue
     fi
     COUNT=$(extract_triggers "$f" | grep -c . || true)
+    RAW_COUNT=$(raw_trigger_items "$f" | grep -c . || true)
     if [ "$COUNT" -eq 0 ]; then
       echo "route-skills: $NAME: triggers: list is empty or malformed" >&2
+      BAD=1
+    elif [ "$RAW_COUNT" -ne "$COUNT" ]; then
+      echo "route-skills: $NAME: triggers: list contains non-scalar entries (maps/flow/block scalars are not literal phrases)" >&2
+      BAD=1
+    elif extract_triggers "$f" | LC_ALL=C grep -q '[^ -~]'; then
+      # Printable-ASCII only: tabs break the candidate encoding, and non-ASCII
+      # length/tolower semantics differ between BSD awk and gawk (nondeterministic
+      # longest-match across platforms).
+      echo "route-skills: $NAME: triggers must be printable ASCII (no tabs/control/non-ASCII characters)" >&2
       BAD=1
     fi
   done
@@ -166,8 +206,9 @@ NAME=${WINNER%%	*}
 SKILL_PATH=${WINNER#*	}
 
 case "$PROMPT" in
-  *"aios-skill-route:$NAME"*)
-    # Already routed for this skill in this prompt/context — never double-inject.
+  *"<!-- aios-skill-route:$NAME -->"*)
+    # The EXACT emitted marker is present for this skill — never double-inject.
+    # (Plain text mentioning "aios-skill-route:<name>-ish" strings is not a marker.)
     exit 0
     ;;
 esac
