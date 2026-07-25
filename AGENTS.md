@@ -38,6 +38,7 @@ bash evals/guards.test.sh
 bash evals/graders.test.sh
 bash evals/conformance.test.sh
 bash evals/codex-driver.test.sh
+bash evals/inject-context.test.sh
 python3 evals/evidence.test.py
 
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)

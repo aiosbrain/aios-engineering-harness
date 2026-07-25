@@ -2,7 +2,12 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
-import { normalizeStopEvent, normalizeToolEvent, type NormalizedEvent } from "../normalize"
+import {
+  normalizeSessionStartEvent,
+  normalizeStopEvent,
+  normalizeToolEvent,
+  type NormalizedEvent,
+} from "../normalize"
 
 const HOOK_TIMEOUT_MS = 10_000
 
@@ -46,7 +51,46 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
     if (result.status !== 0) throw new Error(result.reason || `${policy} could not evaluate the event`)
   }
 
+  // Context channel: run inject-context.sh for a session_start event and return the
+  // validated action text. Losing an injection must never break the session, so any
+  // failure (policy error, malformed envelope) returns null — the guards above keep
+  // their own fail-closed semantics.
+  const buildContext = (phase: "startup" | "resume" | "compact", sessionID: string): string | null => {
+    const event = normalizeSessionStartEvent(directory, sessionID, phase)
+    const result = spawnSync("/bin/sh", [join(root, "hooks", "inject-context.sh")], {
+      cwd: event.cwd,
+      input: JSON.stringify(event),
+      encoding: "utf8",
+      env: process.env,
+      timeout: HOOK_TIMEOUT_MS,
+    })
+    if ((result.status ?? 3) !== 0) return null
+    const validated = spawnSync("/bin/sh", [join(root, "hooks", "validate-action.sh")], {
+      input: result.stdout ?? "",
+      encoding: "utf8",
+      env: process.env,
+      timeout: HOOK_TIMEOUT_MS,
+    })
+    if ((validated.status ?? 3) !== 0) return null
+    try {
+      const action = JSON.parse(validated.stdout)
+      return action.action === "context" && typeof action.text === "string" ? action.text : null
+    } catch {
+      return null
+    }
+  }
+
   return {
+    "experimental.chat.system.transform": async (input, output) => {
+      const text = buildContext("startup", input.sessionID ?? "")
+      if (text) output.system.push(text)
+    },
+
+    "experimental.session.compacting": async (input, output) => {
+      const text = buildContext("compact", input.sessionID)
+      if (text) output.context.push(text)
+    },
+
     "tool.execute.before": async (input, output) => {
       const tool = input.tool.toLowerCase()
       if (["write", "edit", "apply_patch", "patch"].includes(tool)) {

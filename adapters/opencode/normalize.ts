@@ -5,8 +5,8 @@ export type PathChange = {
 }
 
 export type NormalizedEvent = {
-  protocol_version: "1.0"
-  event: "pre_edit" | "pre_command" | "post_edit" | "stop"
+  protocol_version: "1.0" | "1.1"
+  event: "pre_edit" | "pre_command" | "post_edit" | "stop" | "session_start" | "subagent_start"
   runtime: { name: "opencode" }
   cwd: string
   session_id: string
@@ -16,6 +16,8 @@ export type NormalizedEvent = {
   added_content?: Array<{ path: string; content: string }>
   command?: string
   stop?: { verification_loop_active: boolean }
+  session_start?: { phase: "startup" | "resume" | "compact" }
+  subagent_start?: { agent_type?: string; agent_id?: string }
 }
 
 type ToolInput = { tool: string; sessionID: string; callID: string }
@@ -104,5 +106,20 @@ export function normalizeStopEvent(cwd: string, sessionID: string, loop: boolean
     cwd,
     session_id: sessionID,
     stop: { verification_loop_active: loop },
+  }
+}
+
+export function normalizeSessionStartEvent(
+  cwd: string,
+  sessionID: string,
+  phase: "startup" | "resume" | "compact",
+): NormalizedEvent {
+  return {
+    protocol_version: "1.1",
+    event: "session_start",
+    runtime: { name: "opencode" },
+    cwd,
+    session_id: sessionID,
+    session_start: { phase },
   }
 }

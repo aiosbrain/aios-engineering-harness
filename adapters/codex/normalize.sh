@@ -64,6 +64,25 @@ case "$EVENT" in
       }
     ' 2>/dev/null) || exit 3
     ;;
+  session_start)
+    NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "${PWD:-.}" '
+      {
+        protocol_version:"1.1", event:"session_start", runtime:{name:"codex"},
+        cwd:(.cwd // $cwd), session_id:(.session_id // ""),
+        session_start:{phase:(if (.source // "") | IN("resume", "compact")
+                              then .source else "startup" end)}
+      }
+    ' 2>/dev/null) || exit 3
+    ;;
+  subagent_start)
+    NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "${PWD:-.}" '
+      {
+        protocol_version:"1.1", event:"subagent_start", runtime:{name:"codex"},
+        cwd:(.cwd // $cwd), session_id:(.session_id // ""),
+        subagent_start:{agent_type:(.agent_type // ""), agent_id:(.agent_id // "")}
+      }
+    ' 2>/dev/null) || exit 3
+    ;;
   *)
     echo "codex adapter: unsupported event '$EVENT'" >&2
     exit 3

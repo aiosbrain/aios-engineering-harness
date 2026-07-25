@@ -28,6 +28,24 @@ printf 'make lint && make test\n' > .harness/check   # your repo's real check co
 Requirements: POSIX shell and `jq`. Safety adapter/configuration failures map to a
 block; post-edit formatting remains non-blocking.
 
+## Context injection (SessionStart / SubagentStart)
+
+`settings.json` wires `SessionStart` (matcher `startup|resume|compact`) and
+`SubagentStart` to `inject-context.sh`, which emits the CONSTITUTION agent-digest +
+a skill index (protocol `1.1` `context` action; see `hooks/PROTOCOL.md`). Translation
+quirks, live-verified on Claude Code 2.1.220 (2026-07-25):
+
+- **SessionStart consumes plain stdout.** A top-level `{"additionalContext": ...}`
+  JSON body is silently ignored for this event, so the adapter prints the raw text.
+- **SubagentStart** uses the documented nested
+  `{"hookSpecificOutput":{"hookEventName":"SubagentStart","additionalContext":...}}`.
+  The event does **not** expose the child's task text — the injected digest/index lets
+  the child self-route; nothing stronger is claimed.
+- Injection failures never block the session (nonzero exit, empty stdout, context lost).
+- Headless caveat: project-level `.claude/settings.json` hooks only run after the
+  workspace has been trusted **interactively** once; a fresh directory driven purely by
+  `claude -p` will not run them (verified 2.1.220 — user-level hooks are unaffected).
+
 The adapter accepts Claude Code's native `PreToolUse`, `PostToolUse`, and `Stop`
 payloads and emits protocol `1.0` events. Direct Claude-shaped input to the old hook
 paths remains available for the v0 migration window, but new installs use the adapter.

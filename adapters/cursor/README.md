@@ -28,6 +28,17 @@ secrets/protected-paths/worktree are enforced pre-write, not just detected after
 the hook prints `{"followup_message": "..."}`. `cursor/stop-gate.sh` runs the portable
 verify-gate and emits that message on a red `.harness/check`.
 
+## Context injection
+
+Cursor's **guaranteed** context path is the generated always-apply rule
+`.cursor/rules/harness-context.mdc` (agent-digest + skill index), written by
+`install.sh` from `inject-context.sh` output and regenerated on every install — never
+hand-edit it. The native `sessionStart` hook in `hooks.json` is an **additive,
+smoke-gated enhancement** (marker smoke passed on cursor-agent 2026.07.23,
+2026-07-25): it injects the same content via `{"additional_context": ...}` but never
+replaces the rule. `beforeSubmitPrompt` remains validation-only and is not used for
+injection. Injection failures never block a session.
+
 ## Install
 
 ```sh
