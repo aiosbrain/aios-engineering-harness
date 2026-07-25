@@ -28,6 +28,13 @@ Shrink the search space with evidence, not intuition:
 State your current hypothesis explicitly at each step, and what observation would
 falsify it. If an experiment result surprises you, that surprise is signal — follow it.
 
+Before you trust a *null* result (a breakpoint that never fires, a log that never prints,
+an error that vanishes), read `references/silent-failures.md` for your runtime — some
+tooling lies silently (e.g. tsx + `node inspect`, `except: pass`). When you genuinely
+cannot run the real operation (paid API, missing device, prod-only creds), read
+`references/partial-runtime-evidence.md`: partial runtime evidence is still evidence, and
+that page tells you which partial signals combine into a defensible conclusion.
+
 ## Phase 3 — Root cause
 
 You have the root cause when you can answer all three:
@@ -45,3 +52,5 @@ If you can't answer these, you have a correlation, not a cause. Keep going.
 4. Harden (the compound step): could a lint rule, type, assertion, or hook have caught
    this class of bug? Add it, or record it via `compound-learnings`. Check for the same
    pattern elsewhere in the codebase while the mechanism is fresh.
+5. Leave no trace: journal every temporary instrumentation you added and confirm the
+   final `git diff` shows only the fix and its test — nothing else.
