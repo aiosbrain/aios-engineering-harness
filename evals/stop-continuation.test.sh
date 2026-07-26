@@ -144,16 +144,18 @@ OUT=$(cd "$REPO" && printf '%s' "$CLAUDE_LOOPED" \
     "$COPY/adapters/run-hook.sh" claude-code stop stop-verify-gate.sh \
       2>"$SCRATCH/err.txt"); STATUS=$?
 if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] \
+   && grep -q "still failing" "$SCRATCH/err.txt" \
    && grep -q "trace configuration failed; stop allowed" "$SCRATCH/err.txt"; then
-  ok "trace misconfiguration during an active stop loop allows stop with an honest note"
+  ok "trace misconfiguration allows stop without losing the gate diagnostic"
 else bad "stop trace-failure bound (exit=$STATUS out='${OUT:0:40}')"; fi
 
 NO_JQ_BIN="$SCRATCH/no-jq-bin"
 mkdir -p "$NO_JQ_BIN"
-ln -s "$(command -v cat)" "$NO_JQ_BIN/cat"
-ln -s "$(command -v dirname)" "$NO_JQ_BIN/dirname"
+printf '%s\n' '#!/bin/sh' 'exit 127' > "$NO_JQ_BIN/jq"
+chmod +x "$NO_JQ_BIN/jq"
 OUT=$(cd "$REPO" && printf '%s' "$CLAUDE_LOOPED" \
-  | PATH="$NO_JQ_BIN" "$COPY/adapters/run-hook.sh" claude-code stop stop-verify-gate.sh \
+  | PATH="$NO_JQ_BIN:$PATH" \
+    "$COPY/adapters/run-hook.sh" claude-code stop stop-verify-gate.sh \
       2>"$SCRATCH/err.txt"); STATUS=$?
 if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] \
    && grep -q "payload normalization failed.*stop allowed" "$SCRATCH/err.txt"; then

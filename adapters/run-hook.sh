@@ -69,6 +69,7 @@ if [ -n "${HARNESS_TRACE_FILE:-}" ]; then
       exit 1
     fi
     if [ "$STOP_POLICY" -eq 1 ]; then
+      [ -z "$ERRORS" ] || printf '%s\n' "$ERRORS" >&2
       echo "harness adapter: trace configuration failed; stop allowed to avoid unbounded continuation" >&2
       exit 0
     fi
