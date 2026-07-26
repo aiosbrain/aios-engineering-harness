@@ -42,6 +42,12 @@ if [ "$STATUS" -ne 0 ]; then
     echo "harness adapter: payload normalization failed for $RUNTIME $EVENT (context injection skipped)" >&2
     exit 1
   fi
+  if [ "$STOP_POLICY" -eq 1 ]; then
+    # Environmental failures happen before the gate can inspect its loop bound.
+    # Fail open on Stop so a persistent local failure cannot continue forever.
+    echo "harness adapter: payload normalization failed for $RUNTIME $EVENT; stop allowed to avoid unbounded continuation" >&2
+    exit 0
+  fi
   echo "BLOCKED by harness adapter: payload normalization failed for $RUNTIME $EVENT" >&2
   exit 2
 fi
@@ -61,6 +67,10 @@ if [ -n "${HARNESS_TRACE_FILE:-}" ]; then
     if [ "$CONTEXT_POLICY" -eq 1 ]; then
       echo "harness adapter: trace configuration failed (context injection skipped)" >&2
       exit 1
+    fi
+    if [ "$STOP_POLICY" -eq 1 ]; then
+      echo "harness adapter: trace configuration failed; stop allowed to avoid unbounded continuation" >&2
+      exit 0
     fi
     echo "BLOCKED by harness adapter: trace configuration failed" >&2
     exit 2

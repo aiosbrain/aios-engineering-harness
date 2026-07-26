@@ -138,6 +138,28 @@ OUT=$(cd "$REPO" && printf '%s' "$CLAUDE_STOP" | "$COPY/adapters/run-hook.sh" co
 [ "$STATUS" -eq 2 ] && [ -z "$OUT" ] && grep -q "systematic-debugging/SKILL.md" "$SCRATCH/err.txt" \
   && ok "codex stop: exit 2, skill-anchored reason on stderr" || bad "codex stop translation (exit=$STATUS)"
 
+CLAUDE_LOOPED='{"stop_hook_active":true}'
+OUT=$(cd "$REPO" && printf '%s' "$CLAUDE_LOOPED" \
+  | HARNESS_TRACE_FILE="$SCRATCH/missing/results/trace.jsonl" \
+    "$COPY/adapters/run-hook.sh" claude-code stop stop-verify-gate.sh \
+      2>"$SCRATCH/err.txt"); STATUS=$?
+if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] \
+   && grep -q "trace configuration failed; stop allowed" "$SCRATCH/err.txt"; then
+  ok "trace misconfiguration during an active stop loop allows stop with an honest note"
+else bad "stop trace-failure bound (exit=$STATUS out='${OUT:0:40}')"; fi
+
+NO_JQ_BIN="$SCRATCH/no-jq-bin"
+mkdir -p "$NO_JQ_BIN"
+ln -s "$(command -v cat)" "$NO_JQ_BIN/cat"
+ln -s "$(command -v dirname)" "$NO_JQ_BIN/dirname"
+OUT=$(cd "$REPO" && printf '%s' "$CLAUDE_LOOPED" \
+  | PATH="$NO_JQ_BIN" "$COPY/adapters/run-hook.sh" claude-code stop stop-verify-gate.sh \
+      2>"$SCRATCH/err.txt"); STATUS=$?
+if [ "$STATUS" -eq 0 ] && [ -z "$OUT" ] \
+   && grep -q "payload normalization failed.*stop allowed" "$SCRATCH/err.txt"; then
+  ok "missing jq on stop is bounded by allowing stop with an honest note"
+else bad "stop normalization-failure bound (exit=$STATUS out='${OUT:0:40}')"; fi
+
 CURSOR_STOP='{"status":"completed","loop_count":0}'
 OUT=$(printf '%s' "$CURSOR_STOP" | CURSOR_PROJECT_DIR="$REPO" "$COPY/adapters/cursor/stop-gate.sh" 2>/dev/null); STATUS=$?
 if [ "$STATUS" -eq 0 ] && printf '%s' "$OUT" | jq -e '.followup_message | contains("verify-change/SKILL.md")' >/dev/null 2>&1; then
