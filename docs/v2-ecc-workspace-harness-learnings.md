@@ -588,7 +588,7 @@ merely to reduce issue count.
 | V2-05D | Transcript decisions becomes a reference package | V2-05A |
 | V2-05E | Workstream update becomes a reference package | V2-05A |
 | V2-06A | Behavioral scenarios cover package validation, tier denial, and runtime degradation | V2-04B, V2-05A |
-| V2-06B | Lifecycle scenarios cover customized upgrade, repair, and safe uninstall | V2-03D |
+| V2-06B | Lifecycle scenarios cover customized upgrade, repair, and safe uninstall | V2-03C, V2-03D, V2-05A |
 | V2-06C | Local telemetry schema records verifier, correction, latency, cost, and rejection outcomes | V2-05A, V2-06A |
 | V2-07A | Learned-record schema adds provenance, consent, confidence, review, and expiry | V2-00A |
 | V2-07B | Inspect/reject/forget CLI operates only on admin-local learned records | V2-07A |
@@ -596,7 +596,7 @@ merely to reduce issue count.
 | V2-08A | Cockpit reads package, capability, verifier, and approval state through existing domain APIs | V2-01B, V2-04B |
 | V2-08B+ | Re-triaged inbox GUI and ingestion slices, one authority-preserving behavior per PR | V2-08A |
 | V2-09A | Team-tier verified artifact envelope is added version-first to the Brain contract | V2-00A, V2-06C |
-| V2-09B | Share/pull preserves package integrity, provenance, compatibility, and inactive-by-default state | V2-03A, V2-09A |
+| V2-09B | Share/pull preserves package integrity, provenance, compatibility, and inactive-by-default state | V2-01B, V2-03A, V2-05A, V2-06A, V2-09A |
 | V2-10A | Dry-run v1 inventory and migration plan cover customizations, state, and sidecars | V2-03B |
 | V2-10B | Resumable migration implements the approved inventory plan with rollback fixtures | V2-10A |
 | V2-10C | Release matrix proves clean install, customized upgrade, offline doctor, repair, and uninstall | All release-blocking slices |
