@@ -74,6 +74,12 @@
             "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_command guard-worktree.sh",
             "timeout": 30,
             "statusMessage": "Enforcing worktree discipline"
+          },
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_command outbound-comms-guard.sh",
+            "timeout": 30,
+            "statusMessage": "Checking outbound communication policy"
           }
         ]
       }

@@ -26,7 +26,7 @@ esac
 CONTEXT_POLICY=0
 STOP_POLICY=0
 case "$POLICY" in
-  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|post-edit-format.sh) ;;
+  guard-secrets.sh|guard-protected-paths.sh|guard-destructive.sh|guard-worktree.sh|outbound-comms-guard.sh|post-edit-format.sh) ;;
   stop-verify-gate.sh) STOP_POLICY=1 ;;
   inject-context.sh|route-skills.sh) CONTEXT_POLICY=1 ;;
   *) echo "adapter: unsupported policy '$POLICY'" >&2; exit 3 ;;

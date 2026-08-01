@@ -1,0 +1,4 @@
+interface:
+  display_name: "Outbound Comms Guard"
+  short_description: "Configure deterministic outbound send gates"
+  default_prompt: "Use $outbound-comms-guard to configure and verify email or WhatsApp send protections."
