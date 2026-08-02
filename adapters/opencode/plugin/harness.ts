@@ -162,6 +162,7 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
           throw new Error(`Harness command normalization failed: ${(error as Error).message}`)
         }
         enforce("guard-destructive.sh", event)
+        enforce("outbound-comms-guard.sh", event)
       }
     },
 

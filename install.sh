@@ -177,7 +177,7 @@ done
 
 # Make every shell entrypoint executable.
 find "$HARNESS_DIR/hooks" "$HARNESS_DIR/adapters" -type f \
-  \( -name '*.sh' -o -path '*/hooks/git/*' \) -exec chmod +x {} +
+  \( -name '*.sh' -o -name 'outbound-comms-guard.py' -o -path '*/hooks/git/*' \) -exec chmod +x {} +
 
 # Contracts + the verification gate (seed only).
 seed "$HARNESS_DIR/AGENTS.md" "$REPO_ROOT/AGENTS.md"

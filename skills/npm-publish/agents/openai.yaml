@@ -1,0 +1,4 @@
+interface:
+  display_name: "npm Publish"
+  short_description: "Safely publish npm packages with OIDC"
+  default_prompt: "Use $npm-publish to prepare and verify this npm package release."

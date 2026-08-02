@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Runtime Conformance"
+  short_description: "Audit skill parity across agent runtimes"
+  default_prompt: "Use $skill-runtime-conformance to audit this repository for missing or stale runtime skill projections."

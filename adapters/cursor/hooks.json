@@ -7,7 +7,8 @@
     ],
     "beforeShellExecution": [
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command guard-destructive.sh", "timeout": 30, "failClosed": true },
-      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command guard-worktree.sh", "timeout": 30, "failClosed": true }
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command guard-worktree.sh", "timeout": 30, "failClosed": true },
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command outbound-comms-guard.sh", "timeout": 30, "failClosed": true }
     ],
     "preToolUse": [
       { "matcher": "Write|Edit|MultiEdit", "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_edit guard-secrets.sh", "timeout": 30, "failClosed": true },
