@@ -1,6 +1,6 @@
 # Adapter — OpenAI Codex
 
-> Last verified with Codex CLI 0.145.0 on 2026-07-25.
+> Last verified with Codex CLI 0.146.0 on 2026-08-03.
 
 Install the portable pack and native lifecycle wiring:
 
@@ -38,11 +38,12 @@ skill index, protocol `1.1` `context` action), translated to the documented
 contract parse was live-verified on 0.145.0 (Codex injects the text as a developer
 message). Two honest limitations, measured 2026-07-25:
 
-- **`codex exec` 0.145.0 does not load project-level `.codex/hooks.json` SessionStart
-  hooks at all** (0/13 test deliveries; the hook process is never spawned, silently),
-  regardless of `--dangerously-bypass-hook-trust` or `trust_level`. Interactive Codex
-  honors project hooks after `/hooks` review. For headless runs, pass the hook at the
-  user layer, e.g. `codex exec -c 'hooks.SessionStart=[{hooks=[{type="command",command="..."}]}]'`.
+- **Headless hook loading changed between 0.145.0 and 0.146.0.** Version 0.145.0 did
+  not load project-level `.codex/hooks.json` `SessionStart` hooks (0/13 deliveries),
+  while 0.146.0 does. Automation must still inject reviewed hooks explicitly rather
+  than depend on ambient project discovery. The eval driver temporarily hides the
+  equivalent project file during the subprocess so each policy fires exactly once,
+  then restores it. Duplicate hook decisions fail observation completeness.
 - Model-visible hook output is capped at ~2,500 tokens per entry (overflow spills to a
   file with a head/tail preview). `inject-context.sh` caps its output at 8,000 bytes
   and typical digest+index payloads are well under the limit.

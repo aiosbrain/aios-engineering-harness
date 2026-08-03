@@ -28,9 +28,16 @@ record shapes:
   clobber a consumer's own mock rubrics.
 - `lib/exec_timeout.py` — timeout-wrapped subprocess exec with captured stdout/stderr.
 - `lib/normalize_transcript.py` — runtime-specific transcript → generic `events.jsonl`.
+- `lib/build_observations.py` — sanitized lifecycle, attribution, Git binding, and
+  completeness records in backward-compatible `observations.v1.jsonl`; incomplete
+  telemetry can downgrade a run but never upgrade one.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
   runtime CLIs. Verified harness-agnostic: no reference to `.harness/`, `AGENTS.md`, or
   any file `lib/install-harness.sh` creates.
+
+The observation artifact does not change the normalized hook protocol. It is derived
+from runtime JSONL, normalized hook traces, harness-owned checks, Git state, driver
+results, and phase gates. Raw transcripts remain local ignored artifacts.
 
 ## Adapter points (every consumer implements its own)
 

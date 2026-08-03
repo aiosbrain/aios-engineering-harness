@@ -12,9 +12,12 @@ TIMEOUT_OVERRIDE=""
 RESULTS_DIR=""
 MOCK_MODE=success
 KEEP_WORKSPACES=false
+REASONING=default
+PHASE=scenario
+ROLE=agent
 
 usage() {
-  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--judge <runtime|none>] [--keep-workspaces]" >&2
+  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--judge <runtime|none>] [--keep-workspaces]" >&2
 }
 
 cleanup_scratch() {
@@ -39,12 +42,42 @@ fingerprint_forbidden() {
   done
 }
 
+write_early_failure() {
+  ATTRIBUTION=$1
+  REASON=$2
+  EMPTY_HASH=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  EARLY_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
+  jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" \
+    --arg runtime "$RUNTIME" --arg model "$MODEL" --arg reasoning "$REASONING" \
+    --arg sha "$EARLY_SHA" --arg diff_hash "$EMPTY_HASH" --arg attribution "$ATTRIBUTION" \
+    --arg reason "$REASON" \
+    '{schema_version:"observations.v1",run_id:$id,phase:$phase,role:$role,runtime:$runtime,
+      model:$model,runtime_version:"unknown",harness_sha:"unknown",reasoning_level:$reasoning,turn_id:($id+":phase"),item_id:null,sequence:1,
+      frozen_sha:$sha,current_sha:$sha,diff_hash:$diff_hash,event:"phase.gate",status:"error",
+      source_artifact:"runner",severity:"error",attribution:$attribution,summary:{reason:$reason}}' \
+    > "$OBSERVATIONS"
+  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" \
+    '{schema_version:"observations.v1",run_id:$id,verdict:"error",effective_status:"error",
+      observation_count:1,usage_state:"unknown",issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
+    > "$OBSERVATION_SUMMARY"
+  jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" \
+    --arg model "$MODEL" --arg reason "$REASON" --arg observations "$OBSERVATIONS" \
+    --arg observation_summary "$OBSERVATION_SUMMARY" --slurpfile completeness "$OBSERVATION_SUMMARY" \
+    '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,model:$model,
+      status:"error",reason:$reason,duration_ms:0,usage:{tokens:null,cost_usd:null},
+      artifacts:{observations:$observations,observation_summary:$observation_summary},
+      observation_completeness:$completeness[0]}' > "$RUN_RECORD"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --runtime) RUNTIME=${2:-}; shift 2 ;;
     --scenario) SCENARIO=${2:-}; shift 2 ;;
     --runs) RUNS=${2:-}; shift 2 ;;
     --model) MODEL=${2:-}; shift 2 ;;
+    --reasoning) REASONING=${2:-}; shift 2 ;;
+    --phase) PHASE=${2:-}; shift 2 ;;
+    --role) ROLE=${2:-}; shift 2 ;;
     --judge) JUDGE=${2:-}; shift 2 ;;
     --judge-model) JUDGE_MODEL=${2:-}; shift 2 ;;
     --timeout) TIMEOUT_OVERRIDE=${2:-}; shift 2 ;;
@@ -113,26 +146,27 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     GRADE="$RUN_DIR/grade.json"
     JUDGE_RECORD="$RUN_DIR/judge.json"
     RUN_RECORD="$RUN_DIR/run.json"
+    OBSERVATIONS="$RUN_DIR/observations.v1.jsonl"
+    OBSERVATION_SUMMARY="$RUN_DIR/observations.v1.summary.json"
 
     (cd "$WORKSPACE" && "$SCENARIO_DIR/setup.sh")
     SETUP_STATUS=$?
     if [ "$SETUP_STATUS" -ne 0 ]; then
-      jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" \
-        '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,status:"error",reason:"scenario setup failed"}' > "$RUN_RECORD"
+      write_early_failure product "scenario setup failed"
       RUN_RECORDS+=("$RUN_RECORD")
       cleanup_scratch
       continue
     fi
 
     if ! "$ROOT/evals/lib/install-harness.sh" "$ROOT" "$WORKSPACE" "$RUNTIME"; then
-      jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" \
-        '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,status:"error",reason:"harness installation failed"}' > "$RUN_RECORD"
+      write_early_failure harness "harness installation failed"
       RUN_RECORDS+=("$RUN_RECORD")
       cleanup_scratch
       continue
     fi
     mkdir -p "$(dirname "$WORK_TRACE")"
     : > "$WORK_TRACE"
+    FROZEN_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
     git -C "$WORKSPACE" diff HEAD --binary > "$BEFORE_DIFF"
 
     FORBIDDEN_PATHS=$(jq -c '.forbidden_paths // []' "$SCENARIO_DIR/manifest.json")
@@ -142,7 +176,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     HARNESS_ROOT="$ROOT" HARNESS_WORKSPACE="$WORKSPACE" HARNESS_SCENARIO="$SCENARIO_ID" \
       HARNESS_PROMPT_FILE="$SCENARIO_DIR/prompt.md" HARNESS_TRACE_FILE="$WORK_TRACE" \
       HARNESS_RUN_DIR="$RUN_DIR" HARNESS_DRIVER_RECORD="$DRIVER_RECORD" \
-      HARNESS_MODEL="$MODEL" HARNESS_TIMEOUT="$TIMEOUT" HARNESS_MOCK_MODE="$MOCK_MODE" \
+      HARNESS_MODEL="$MODEL" HARNESS_REASONING="$REASONING" HARNESS_TIMEOUT="$TIMEOUT" HARNESS_MOCK_MODE="$MOCK_MODE" \
       "$DRIVER"
     DRIVER_STATUS=$?
 
@@ -155,6 +189,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     fi
 
     git -C "$WORKSPACE" diff HEAD --binary > "$AFTER_DIFF"
+    CURRENT_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
     FORBIDDEN_AFTER=$(fingerprint_forbidden "$WORKSPACE" "$FORBIDDEN_PATHS")
     if [ "$FORBIDDEN_BEFORE" = "$FORBIDDEN_AFTER" ]; then FORBIDDEN_HIT=false; else FORBIDDEN_HIT=true; fi
     "$SCENARIO_DIR/grade.sh" "$WORKSPACE" "$TRACE" "$BEFORE_DIFF" > "$GRADE"
@@ -196,22 +231,47 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     else STATUS=pass
     fi
 
+    OBSERVATION_SOURCE="$TRACE"
+    if [ "$RUNTIME" = codex ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+      OBSERVATION_SOURCE="$TRANSCRIPT"
+    fi
+    if python3 "$ROOT/evals/lib/build_observations.py" \
+      --runtime "$RUNTIME" --transcript "$OBSERVATION_SOURCE" --hooks "$HOOK_TRACE" \
+      --driver "$DRIVER_RECORD" --run-id "$RUN_ID" --phase "$PHASE" --role "$ROLE" \
+      --reasoning "$REASONING" --frozen-sha "$FROZEN_SHA" --current-sha "$CURRENT_SHA" \
+      --diff "$AFTER_DIFF" --phase-status "$STATUS" --output "$OBSERVATIONS" \
+      --summary "$OBSERVATION_SUMMARY"; then
+      STATUS=$(jq -r '.effective_status' "$OBSERVATION_SUMMARY")
+    else
+      STATUS=error
+      jq -n --arg id "$RUN_ID" \
+        '{schema_version:"observations.v1",run_id:$id,verdict:"error",effective_status:"error",issues:[{severity:"error",attribution:"harness",summary:"observation builder failed"}]}' \
+        > "$OBSERVATION_SUMMARY"
+      : > "$OBSERVATIONS"
+    fi
+
     TOOL_EVIDENCE=$(jq -s '
       {event_count:length,
        tool_counts:(map(select(.event != null) | (.tool_name // .event)) | group_by(.) | map({key:.[0],value:length}) | from_entries),
        checks:(map(select(.record_type == "check")) | length)}
     ' "$TRACE" 2>/dev/null || printf '%s' '{"event_count":0,"tool_counts":{},"checks":0}')
 
-    jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg status "$STATUS" \
+    jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg status "$STATUS" --arg reasoning "$REASONING" \
       --arg workspace "$WORKSPACE" --arg trace "$TRACE" --arg hook_trace "$HOOK_TRACE" --arg before "$BEFORE_DIFF" --arg after "$AFTER_DIFF" \
       --argjson driver "$(cat "$DRIVER_RECORD")" --argjson grade "$(cat "$GRADE")" --argjson forbidden_hit "$FORBIDDEN_HIT" \
       --argjson judge "$(cat "$JUDGE_RECORD")" --argjson changed "$CHANGED_PATHS" --argjson evidence "$TOOL_EVIDENCE" '
       {schema_version:"1.0",run_id:$id,scenario:$scenario,status:$status,
-       runtime:$driver.runtime,model:$driver.model,exit_status:$driver.exit_status,duration_ms:$driver.duration_ms,
+       runtime:$driver.runtime,model:$driver.model,reasoning_level:($driver.reasoning_level // $reasoning),
+       runtime_version:($driver.cli_version // "unknown"),harness_sha:($driver.harness_sha // "unknown"),
+       exit_status:$driver.exit_status,duration_ms:$driver.duration_ms,
        reason:($driver.reason // null),usage:$driver.usage,tool_evidence:$evidence,checks:$grade.checks,semantic_judge:$judge,
        changed_paths:$changed,forbidden_path_hit:$forbidden_hit,artifacts:{workspace:$workspace,trace:$trace,hook_trace:$hook_trace,before_diff:$before,after_diff:$after,
        transcript:($driver.transcript // null),final:($driver.final // null)}}
     ' > "$RUN_RECORD"
+    jq --arg observations "$OBSERVATIONS" --arg observation_summary "$OBSERVATION_SUMMARY" \
+      --slurpfile completeness "$OBSERVATION_SUMMARY" \
+      '.artifacts.observations=$observations | .artifacts.observation_summary=$observation_summary | .observation_completeness=$completeness[0]' \
+      "$RUN_RECORD" > "$RUN_RECORD.tmp" && mv "$RUN_RECORD.tmp" "$RUN_RECORD"
     RUN_RECORDS+=("$RUN_RECORD")
     echo "$RUN_ID: $STATUS"
     cleanup_scratch
@@ -227,11 +287,13 @@ jq -s '
   {schema_version:"1.0",total:length,
    by_status:(group_by(.status) | map({key:.[0].status,value:length}) | from_entries),
    pass_rate:(if length == 0 then 0 else ([.[] | select(.status == "pass")] | length) / length end),
-   runtimes:(group_by([.runtime,.model]) | map({runtime:.[0].runtime,model:.[0].model,runs:length,
+   runtimes:(group_by([.runtime,.model,.reasoning_level]) | map({runtime:.[0].runtime,model:.[0].model,
+     reasoning_level:(.[0].reasoning_level // "unknown"),runtime_version:(.[0].runtime_version // "unknown"),runs:length,
      passed:([.[] | select(.status == "pass")] | length),duration_ms:(map(.duration_ms // 0) | add),
      tokens:(map(.usage.tokens // empty) | if length == 0 then null else add end),
      cost_usd:(map(.usage.cost_usd // empty) | if length == 0 then null else add end)})),
-   runs:map({run_id,scenario,runtime,model,status,duration_ms,tool_evidence,usage,forbidden_path_hit})}
+   runs:map({run_id,scenario,runtime,model,status,duration_ms,tool_evidence,usage,forbidden_path_hit,
+     observation_verdict:(.observation_completeness.verdict // "missing")})}
 ' "${RUN_RECORDS[@]}" > "$RESULTS_DIR/summary.json"
 
 echo "results: $RESULTS_DIR/summary.json"

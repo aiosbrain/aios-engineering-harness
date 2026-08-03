@@ -33,7 +33,7 @@ bash evals/run.sh --runtime <claude|codex|opencode|mock> \
   --runs <n>
 ```
 
-Optional flags include `--model`, `--timeout`, `--results-dir`, `--judge`,
+Optional flags include `--model`, `--reasoning`, `--phase`, `--role`, `--timeout`, `--results-dir`, `--judge`,
 `--judge-model`, and `--keep-workspaces` (skip the post-run cleanup of a run's scratch
 workspace — useful when debugging a real, non-mock run). Credentials come only from the
 installed runtime; the lab never reads or stores credential configuration.
@@ -43,6 +43,15 @@ passes the scenario prompt to a driver, grades deterministic evidence, and emits
 JSON plus an aggregate `summary.json`. Run records contain runtime/model, exit and
 duration, tool/check counts, changed paths, checks, available token/cost fields, and
 artifact locations. Missing usage remains `null` rather than estimated.
+
+Each completed driver phase also emits `observations.v1.jsonl` and a completeness
+summary. Observation rows contain only sanitized summaries and hashes while binding
+runtime/model/reasoning and turn/item lifecycle to the frozen SHA, current SHA, and
+diff hash. A started turn, tool, or check without a terminal record, malformed or
+contradictory JSONL, or a missing required headless Codex session hook makes a Codex
+run `needs_review` or `error`; it can never remain `pass`. Token or cost absence is
+recorded as `unknown`, never zero. Test commands behind a shell pipeline are not
+authoritative unless pipe-failure propagation is proven.
 
 `hook-events.jsonl` preserves the raw adapter and fixture trace. `events.jsonl` keeps
 transcript-derived events in their original order while reconciling matching check
@@ -77,7 +86,3 @@ general model superiority. Redacted local smoke reports may be committed under
   hook mechanism receives its config (today `HARNESS_TRACE_FILE`/`HARNESS_ROOT` are read
   directly from the CLI subprocess's env by `adapters/*/settings.json`/`hooks.json` and
   the OpenCode plugin) — bigger than a bugfix, tracked as a follow-up.
-- **No CI wiring for the eval lab.** This repo has no `.github/workflows/` at all today;
-  `evals/*.test.sh` and `bash evals/run.sh --runtime mock --scenario all --judge mock`
-  are run by hand. Bootstrapping CI for this repo is a separate project from the eval lab
-  itself.
