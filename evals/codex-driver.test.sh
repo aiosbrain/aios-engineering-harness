@@ -26,7 +26,7 @@ run_fake_codex() {
     HARNESS_ROOT="$ROOT" HARNESS_WORKSPACE="$case_dir/workspace" \
     HARNESS_PROMPT_FILE="$case_dir/prompt.md" HARNESS_TRACE_FILE="$case_dir/trace.jsonl" \
     HARNESS_RUN_DIR="$case_dir/run" HARNESS_DRIVER_RECORD="$case_dir/run/driver.json" \
-    HARNESS_MODEL=default HARNESS_TIMEOUT=10 \
+    HARNESS_MODEL=default HARNESS_REASONING=high HARNESS_TIMEOUT=10 \
     bash "$ROOT/evals/drivers/codex.sh"
 }
 
@@ -62,6 +62,32 @@ chmod +x "$TMP/bin/codex"
 run_fake_codex "$CASE_B" >/dev/null 2>&1
 jq -e '.exit_status == 1' "$CASE_B/run/driver.json" >/dev/null 2>&1
 report "codex.sh: item.completed present -> stays error, not misclassified unavailable" $?
+
+# Case C: headless runs must inject every required project hook explicitly because
+# Codex exec does not load .codex/hooks.json reliably. The fake records argv without
+# printing it into a tracked fixture.
+CASE_C="$TMP/case-c"
+mkdir -p "$CASE_C"
+mkdir -p "$CASE_C/workspace/.codex"
+printf '%s\n' '{"hooks":{"SessionStart":[]}}' > "$CASE_C/workspace/.codex/hooks.json"
+cat > "$TMP/bin/codex" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" > "$HARNESS_RUN_DIR/argv.txt"
+echo '{"type":"turn.started"}'
+echo '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+exit 0
+EOF
+chmod +x "$TMP/bin/codex"
+run_fake_codex "$CASE_C" >/dev/null 2>&1
+if [ -f "$CASE_C/workspace/.codex/hooks.json" ] && [ ! -e "$CASE_C/run/project-hooks.json" ]; then
+  report "codex.sh: project hooks restored after explicit headless injection" 0
+else
+  report "codex.sh: project hooks restored after explicit headless injection" 1
+fi
+for REQUIRED in hooks.SessionStart hooks.SubagentStart hooks.UserPromptSubmit hooks.PreToolUse hooks.PostToolUse hooks.Stop 'model_reasoning_effort="high"'; do
+  grep -F "$REQUIRED" "$CASE_C/run/argv.txt" >/dev/null 2>&1 || { report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 1; continue; }
+  report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 0
+done
 
 echo "codex-driver.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

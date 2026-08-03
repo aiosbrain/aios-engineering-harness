@@ -42,6 +42,7 @@ bash evals/inject-context.test.sh
 bash evals/route-skills.test.sh
 bash evals/stop-continuation.test.sh
 python3 evals/evidence.test.py
+python3 evals/observations.test.py
 
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)
 bun test evals/opencode-plugin.test.ts

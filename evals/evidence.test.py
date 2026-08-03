@@ -42,6 +42,35 @@ class TranscriptEvidenceTests(unittest.TestCase):
         self.assertTrue(all(NORMALIZE.is_check(command) for command in accepted))
         self.assertFalse(any(NORMALIZE.is_check(command) for command in rejected))
 
+    def test_node_22_test_commands_are_recognized_through_shell_wrappers(self) -> None:
+        accepted = [
+            "node --test test/unit.test.mjs",
+            "/opt/homebrew/bin/node --test-name-pattern parser --test test/parser.test.mjs",
+            "/bin/zsh -lc 'git diff --check && node --test test/operator-loop/config.test.mjs'",
+        ]
+        rejected = [
+            "echo node --test test/unit.test.mjs",
+            "sed -n '1,80p' node-test-notes.txt",
+            "node -e \"console.log('--test')\"",
+        ]
+        self.assertTrue(all(NORMALIZE.check_kind(command) == "node-test" for command in accepted))
+        self.assertFalse(any(NORMALIZE.is_check(command) for command in rejected))
+
+    def test_masked_test_pipeline_cannot_be_authoritative(self) -> None:
+        unsafe = NORMALIZE.codex(
+            {"type": "item.completed", "item": {"id": "masked", "type": "command_execution",
+             "command": "/bin/zsh -lc 'node --test test/a.test.mjs | sed -n 1,20p'", "exit_code": 0}},
+            "/tmp/workspace",
+        )
+        safe = NORMALIZE.codex(
+            {"type": "item.completed", "item": {"id": "safe", "type": "command_execution",
+             "command": "/bin/zsh -lc 'set -o pipefail; node --test test/a.test.mjs | sed -n 1,20p'", "exit_code": 0}},
+            "/tmp/workspace",
+        )
+        self.assertEqual(unsafe[-1]["record_type"], "unsafe_check")
+        self.assertEqual(unsafe[-1]["evidence_status"], "needs_review")
+        self.assertEqual(safe[-1]["record_type"], "check")
+
     def test_claude_uses_is_error_without_output_heuristics(self) -> None:
         pending: dict[str, str] = {}
         events = [event for record in records("claude.jsonl")

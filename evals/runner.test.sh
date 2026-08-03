@@ -71,6 +71,10 @@ bash "$INSTALL_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline -
   --results-dir "$INSTALL_RESULTS" >/dev/null 2>&1
 if jq -e '.status == "error" and .reason == "harness installation failed"' \
     "$INSTALL_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
+   jq -e '.observation_completeness.verdict == "error" and .observation_completeness.issues[0].attribution == "harness"' \
+    "$INSTALL_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
+   jq -e '.event == "phase.gate" and .status == "error" and .attribution == "harness"' \
+    "$INSTALL_RESULTS/tdd-under-deadline-mock-1/observations.v1.jsonl" >/dev/null &&
    jq -e '.total == 1 and .by_status.error == 1' "$INSTALL_RESULTS/summary.json" >/dev/null &&
    [ ! -e "$DRIVER_MARKER" ]; then
   PASS=$((PASS+1)); echo "PASS: install failure is recorded before driver execution"
@@ -130,6 +134,8 @@ fi
 FORBIDDEN_ROOT=$(mktemp -d /tmp/harness-forbidden.XXXXXX)
 mkdir -p "$FORBIDDEN_ROOT/evals/lib" "$FORBIDDEN_ROOT/evals/drivers" "$FORBIDDEN_ROOT/evals/scenarios/tamper-scenario"
 cp "$ROOT/evals/run.sh" "$FORBIDDEN_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/build_observations.py" "$FORBIDDEN_ROOT/evals/lib/build_observations.py"
+cp "$ROOT/evals/lib/normalize_transcript.py" "$FORBIDDEN_ROOT/evals/lib/normalize_transcript.py"
 printf '#!/bin/sh\nexit 0\n' > "$FORBIDDEN_ROOT/evals/lib/install-harness.sh"
 chmod +x "$FORBIDDEN_ROOT/evals/lib/install-harness.sh"
 printf '{"id":"tamper-scenario","title":"tamper test","timeout_seconds":60,"semantic_required":false,"forbidden_paths":[".secret"]}\n' \

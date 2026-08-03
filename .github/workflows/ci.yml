@@ -66,6 +66,8 @@ jobs:
         run: bash evals/stop-continuation.test.sh
       - name: evidence.test.py
         run: python3 evals/evidence.test.py
+      - name: observations.test.py
+        run: python3 evals/observations.test.py
 
   plugin-test:
     name: OpenCode plugin tests (bun, pinned)

@@ -30,22 +30,66 @@ def event_base(runtime: str, kind: str, workspace: str, session: str = "") -> di
 
 
 PYTHON = re.compile(r"^python(?:3(?:\.\d+)*)?$")
+NODE = re.compile(r"^node(?:js)?$")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+
+
+def shell_tokens(command: str) -> list[str]:
+    """Tokenize shell syntax while preserving separators only when unquoted."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        return list(lexer)
+    except ValueError:
+        return []
+
+
+def shell_script(tokens: list[str]) -> str | None:
+    """Return the script passed to a common shell -c/-lc wrapper, if present."""
+    if not tokens or os.path.basename(tokens[0]) not in SHELLS:
+        return None
+    for index, token in enumerate(tokens[1:], 1):
+        if token == "-c" or (token.startswith("-") and token.endswith("c")):
+            return tokens[index + 1] if index + 1 < len(tokens) else None
+    return None
 
 
 def command_segments(command: str) -> list[list[str]]:
     """Return simple-command tokens without treating quoted check names as execution."""
+    outer = shell_tokens(command)
+    nested = shell_script(outer)
+    if nested is not None:
+        return command_segments(nested)
     segments: list[list[str]] = []
-    for segment in re.split(r"\s*(?:&&|\|\||[;|])\s*", command):
-        if not segment.strip():
-            continue
-        try:
-            tokens = shlex.split(segment)
-        except ValueError:
-            continue
-        if tokens:
-            segments.append(tokens)
+    current: list[str] = []
+    for token in outer:
+        if token in {";", "&&", "||", "|", "&"}:
+            if current:
+                segments.append(current)
+                current = []
+        else:
+            current.append(token)
+    if current:
+        segments.append(current)
     return segments
+
+
+def masked_pipeline(command: str) -> bool:
+    """True when a check is piped without proof that pipe failures propagate."""
+    tokens = shell_tokens(command)
+    nested = shell_script(tokens)
+    if nested is not None:
+        wrapper_pipefail = any(
+            token == "pipefail" and index > 0 and tokens[index - 1] in {"-o", "+o"}
+            for index, token in enumerate(tokens)
+        )
+        return masked_pipeline(nested) and not wrapper_pipefail
+    if "|" not in tokens:
+        return False
+    proof = bool(re.search(r"(?:^|[;&]\s*)set\s+(?:-[a-zA-Z]*o\s+pipefail|-euo\s+pipefail)(?:\s|;|&|$)", command))
+    return not proof
 
 
 def unwrap_command(tokens: list[str]) -> list[str]:
@@ -81,16 +125,20 @@ def unwrap_command(tokens: list[str]) -> list[str]:
 def check_kind(command: str) -> str | None:
     for tokens in command_segments(command):
         tokens = unwrap_command(tokens)
-        if not tokens or not PYTHON.match(os.path.basename(tokens[0])):
+        if not tokens:
             continue
+        executable = os.path.basename(tokens[0])
         arguments = tokens[1:]
-        if "-c" in arguments:
-            continue
-        for index, argument in enumerate(arguments):
-            if argument == "-m" and index + 1 < len(arguments) and arguments[index + 1] == "unittest":
-                return "unittest"
-            if not argument.startswith("-") and os.path.basename(argument) == "check.py":
-                return "check.py"
+        if PYTHON.match(executable):
+            if "-c" in arguments:
+                continue
+            for index, argument in enumerate(arguments):
+                if argument == "-m" and index + 1 < len(arguments) and arguments[index + 1] == "unittest":
+                    return "unittest"
+                if not argument.startswith("-") and os.path.basename(argument) == "check.py":
+                    return "check.py"
+        if NODE.match(executable) and any(argument == "--test" or argument.startswith("--test=") for argument in arguments):
+            return "node-test"
     return None
 
 
@@ -178,7 +226,11 @@ def codex(record: dict[str, Any], workspace: str) -> list[dict[str, Any]]:
             exit_code = item.get("exit_code", 1)
             if not isinstance(exit_code, (int, float)) or isinstance(exit_code, bool):
                 exit_code = 1
-            records.append({"record_type": "check", "command": command, "status": exit_code})
+            if masked_pipeline(command):
+                records.append({"record_type": "unsafe_check", "command": command,
+                                "exit_code": exit_code, "evidence_status": "needs_review"})
+            else:
+                records.append({"record_type": "check", "command": command, "status": exit_code})
         return records
     return []
 
