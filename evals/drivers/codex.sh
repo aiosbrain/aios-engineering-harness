@@ -90,7 +90,8 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   ([.[] | select(.type == "turn.completed") | .usage] | last // {}) as $u |
-  {tokens:(if ($u | length) == 0 then null else (($u.input_tokens // 0) + ($u.output_tokens // 0)) end),
+  {tokens:(if (($u.input_tokens | type) == "number" and ($u.output_tokens | type) == "number")
+           then ($u.input_tokens + $u.output_tokens) else null end),
    input_tokens:($u.input_tokens // null),cached_input_tokens:($u.cached_input_tokens // null),
    output_tokens:($u.output_tokens // null),reasoning_output_tokens:($u.reasoning_output_tokens // null),cost_usd:null}
 ' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"cost_usd":null}')
