@@ -38,17 +38,30 @@ Optional flags include `--model`, `--reasoning`, `--phase`, `--role`, `--timeout
 workspace — useful when debugging a real, non-mock run). Credentials come only from the
 installed runtime; the lab never reads or stores credential configuration.
 
-`--program-id`, `--issue-id`, and `--attempt-id` provide stable accounting identity;
-their backward-compatible default is `unknown`/the generated run ID. Mark an outcome
-independently verified only with explicit `--outcome-verified`. `summary.json` includes
-an `accounting` section that preserves total, input, cached-input, output, and
-reasoning-output dimensions without double-counting the two subset dimensions. An
-unknown attempt leaves the all-attempt total null while exposing a labelled known-only
-subtotal and unknown-attempt count. Costs are grouped by provenance and currency, never
-folded into an unlabeled total: `runtime_reported`, `pricing_estimate`,
-`allocated_subscription`, or `unknown`. Estimates require caller-supplied versioned
-catalog/model/service tier/currency/timestamp/formula provenance; allocations require
-explicit allocation metadata. The harness ships no live pricing catalog.
+`--program-id`, `--issue-id`, and `--attempt-id` provide stable accounting identity.
+When no attempt ID is supplied, the runner prefixes the legacy run ID with a unique
+invocation namespace; the run ID and artifact directory stay unchanged. `--outcome-id`
+is only a claim: it counts only for a passing reviewer/verifier terminal record with
+exit 0, a passing observation verdict, its exact current SHA as `reviewed_sha`, and
+immutable driver/observation-summary hashes. A bare boolean is never evidence.
+
+`summary.json.accounting.rollups` contains exact-once `by_attempt`, `by_phase`,
+`by_issue`, `by_program`, and explicitly labelled `overall_unique_attempts` views. The
+five independent token dimensions are total, input, cached input, output, and reasoning
+output. State is `complete` only when all five are reported, `partial` when any but not
+all are reported, and `unknown` when none are; legacy `usage_state` stays `reported`
+when any token dimension or a cost exists. No missing provider total is derived.
+
+Costs are grouped by provenance and currency, never folded into an unlabeled total:
+`runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
+`runtime_reported` means only that a runtime emitted a numeric field; its source field
+and `runtime_reported_not_billed_or_actual` semantics are retained, not billed or actual
+spend. Pricing estimates require versioned `token_rate_v1` inputs (all five token counts
+and rates), model, service tier, currency, ISO timestamp, and exact recomputation. That
+method prices uncached input, cached input, non-reasoning output, and reasoning output
+as disjoint portions; the total-token rate is explicitly zero.
+Subscription allocations require versioned `proportional_allocation_v1` inputs and an
+exact amount/numerator/denominator recomputation. The harness ships no live catalog.
 
 Each run creates an isolated temporary Git repository, installs a copy of the harness,
 passes the scenario prompt to a driver, grades deterministic evidence, and emits a run
@@ -65,14 +78,18 @@ run `needs_review` or `error`; it can never remain `pass`. Token or cost absence
 recorded as `unknown`, never zero. Test commands behind a shell pipeline are not
 authoritative unless pipe-failure propagation is proven.
 
-The sanitized historical replay fixtures under `fixtures/accounting/` contain only
-driver/observation artifact basenames, hashes, stable identities, statuses, and token
-facts. AIO-695 retains six attempts: five known-token attempts sum to 7,085,001 and one
-is token-unknown; all six costs remain unknown. AIO-691 retains seven deterministic
-source-driver attempts (one token-unknown) with known-token subtotal 7,138,031 and one
-explicitly verified final-review outcome. A same-run conflicting historical telemetry
-artifact is deliberately excluded from that retained chain and documented in the fixture;
-the live aggregator instead fails closed on such a collision.
+The sanitized historical replay fixtures under `fixtures/accounting/` retain source
+basenames and hashes, status/exit/observation verdict, current/review SHA or explicit
+`unknown`, exact retries, and retained conflict-exclusion evidence—never transcripts,
+final prose, diffs, or absolute paths. AIO-695 retains six attempts: five known-token
+attempts sum to 7,085,001 and one is token-unknown; all six costs remain unknown.
+AIO-691 retains seven attempts with known-token subtotal 7,138,031 and one verified
+final-review outcome. A same-identity contradiction fails closed during live replay.
+
+Consumers may receive `run.sh` and drivers before the later sync of
+`lib/accounting.py` and `lib/build_observations.py`. That intermediate state runs with
+explicit `accounting.state: legacy_unknown`; the later consumer sync must add both core
+modules before detailed accounting is available.
 
 `hook-events.jsonl` preserves the raw adapter and fixture trace. `events.jsonl` keeps
 transcript-derived events in their original order while reconciling matching check

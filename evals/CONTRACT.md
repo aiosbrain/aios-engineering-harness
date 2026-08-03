@@ -31,11 +31,15 @@ record shapes:
 - `lib/build_observations.py`, `lib/accounting.py` — sanitized lifecycle, attribution,
   Git binding, completeness, and backward-compatible `observations.v1` accounting.
   Accounting keeps total/input/cached-input/output/reasoning-output dimensions separate;
-  cached input and reasoning output are subsets, never additive dimensions. Costs are
-  only `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
-  Missing values remain null, caller-supplied estimate/allocation provenance is required,
-  and aggregation deduplicates identical attempt replays while rejecting conflicting
-  identities. Incomplete telemetry can downgrade a run but never upgrade one.
+  cached input and reasoning output are subsets, never additive dimensions. Token state
+  is complete/partial/unknown without deriving a missing total. Costs are only
+  `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
+  Runtime-reported values retain source semantics but never assert billed/actual spend;
+  estimates and allocations require versioned, ISO-timestamped, recomputable formula
+  inputs. Aggregation deduplicates attempts once before hierarchical attempt/phase/issue/
+  program rollups, rejects conflicting replays and verified-outcome evidence, and counts
+  only verified outcome IDs bound to a passing reviewer/verifier terminal record and its
+  exact current SHA. Incomplete telemetry can downgrade a run but never upgrade one.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
   runtime CLIs. Verified harness-agnostic: no reference to `.harness/`, `AGENTS.md`, or
   any file `lib/install-harness.sh` creates.
@@ -69,3 +73,7 @@ paths so `run.sh` doesn't need patching), writes its own `lib/install-harness.sh
 `drivers/mock.sh`, and adds its own `scenarios/`. Pin the source commit the core was
 vendored from (a version marker file) so drift is visible and re-syncs are deliberate,
 never silent — see `aios-workspace/evals/README.md` for the concrete sync mechanism.
+
+During a staged sync, a consumer may receive `run.sh` before the two accounting core
+modules. In that narrow intermediate, `run.sh` preserves legacy execution and emits
+explicit `legacy_unknown` accounting; the next sync must add both modules.

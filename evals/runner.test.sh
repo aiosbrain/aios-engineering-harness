@@ -6,6 +6,9 @@ PASS=0
 FAIL=0
 STAMP="runner-test-$$"
 
+python3 "$ROOT/evals/accounting.test.py" >/dev/null || { echo "FAIL: accounting contract suite"; exit 1; }
+bash "$ROOT/evals/runtime-accounting.test.sh" >/dev/null || { echo "FAIL: runtime accounting suite"; exit 1; }
+
 run_case() {
   local mode="$1" want="$2"
   local dir="$ROOT/evals/results/$STAMP-$mode"
@@ -57,11 +60,37 @@ if jq -e --argjson n "$EXPECTED_TOTAL" '.total == $n and .by_status.pass == $n a
 else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate summary"
 fi
+if jq -e '.accounting.attempt_count == .total and (.accounting.rollups.by_attempt | length) == .total' "$ALL_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: aggregate summary contains exact-once accounting rollups"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: aggregate accounting rollups"
+fi
+
+OUTCOME_DIR="$ROOT/evals/results/$STAMP-outcome"
+bash "$ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 --phase review --role reviewer \
+  --program-id eval-program --issue-id AIO-709 --outcome-id AIO-709:mock-verified --results-dir "$OUTCOME_DIR" >/dev/null
+if jq -e '.accounting.outcome_count == 1 and .accounting.verified_outcomes[0].outcome_id == "AIO-709:mock-verified" and .runs[0].verified_outcome.reviewed_sha == .runs[0].current_sha and (.runs[0].verified_outcome.evidence | length == 2)' "$OUTCOME_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: passing reviewer outcome has SHA-bound immutable evidence"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: verified outcome accounting"
+fi
+
+REJECTED_OUTCOME_DIR="$ROOT/evals/results/$STAMP-outcome-rejected"
+bash "$ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 --mock-mode failure --phase review --role reviewer \
+  --program-id eval-program --issue-id AIO-709 --outcome-id AIO-709:rejected --results-dir "$REJECTED_OUTCOME_DIR" >/dev/null
+if jq -e '.accounting.outcome_count == 0 and .runs[0].outcome_claim_status == "rejected" and .runs[0].verified_outcome == null' "$REJECTED_OUTCOME_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: non-pass reviewer outcome claim is rejected"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: non-pass outcome claim"
+fi
 
 INSTALL_ROOT=$(mktemp -d /tmp/harness-install-failure.XXXXXX)
 mkdir -p "$INSTALL_ROOT/evals/lib" "$INSTALL_ROOT/evals/drivers" "$INSTALL_ROOT/evals/scenarios"
 cp "$ROOT/evals/run.sh" "$INSTALL_ROOT/evals/run.sh"
 cp "$ROOT/evals/lib/install-harness.sh" "$INSTALL_ROOT/evals/lib/install-harness.sh"
+cp "$ROOT/evals/lib/accounting.py" "$INSTALL_ROOT/evals/lib/accounting.py"
+cp "$ROOT/evals/lib/build_observations.py" "$INSTALL_ROOT/evals/lib/build_observations.py"
+cp "$ROOT/evals/lib/normalize_transcript.py" "$INSTALL_ROOT/evals/lib/normalize_transcript.py"
 cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$INSTALL_ROOT/evals/scenarios/tdd-under-deadline"
 DRIVER_MARKER="$INSTALL_ROOT/driver-ran"
 printf '#!/bin/sh\ntouch "%s"\nexit 99\n' "$DRIVER_MARKER" > "$INSTALL_ROOT/evals/drivers/mock.sh"
@@ -69,19 +98,65 @@ chmod +x "$INSTALL_ROOT/evals/drivers/mock.sh"
 INSTALL_RESULTS="$INSTALL_ROOT/results"
 bash "$INSTALL_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
   --results-dir "$INSTALL_RESULTS" >/dev/null 2>&1
-if jq -e '.status == "error" and .reason == "harness installation failed"' \
+INSTALL_STATUS=$?
+if [ "$INSTALL_STATUS" -eq 0 ] &&
+   jq -e '.status == "error" and .reason == "harness installation failed"' \
     "$INSTALL_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
    jq -e '.observation_completeness.verdict == "error" and .observation_completeness.issues[0].attribution == "harness"' \
     "$INSTALL_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
    jq -e '.event == "phase.gate" and .status == "error" and .attribution == "harness"' \
     "$INSTALL_RESULTS/tdd-under-deadline-mock-1/observations.v1.jsonl" >/dev/null &&
-   jq -e '.total == 1 and .by_status.error == 1' "$INSTALL_RESULTS/summary.json" >/dev/null &&
+   jq -e '.total == 1 and .by_status.error == 1 and .accounting.attempt_count == 1' "$INSTALL_RESULTS/summary.json" >/dev/null &&
+   [ -f "$INSTALL_RESULTS/accounting.json" ] &&
    [ ! -e "$DRIVER_MARKER" ]; then
   PASS=$((PASS+1)); echo "PASS: install failure is recorded before driver execution"
 else
   FAIL=$((FAIL+1)); echo "FAIL: install failure handling"
 fi
 rm -rf "$INSTALL_ROOT"
+
+CONSUMER_ROOT=$(mktemp -d /tmp/harness-consumer-compat.XXXXXX)
+mkdir -p "$CONSUMER_ROOT/evals/lib" "$CONSUMER_ROOT/evals/drivers" "$CONSUMER_ROOT/evals/scenarios"
+cp "$ROOT/evals/run.sh" "$CONSUMER_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/normalize_transcript.py" "$CONSUMER_ROOT/evals/lib/normalize_transcript.py"
+printf '#!/bin/sh\nmkdir -p "$2/.git/info"\nprintf ".eval/\\n" >> "$2/.git/info/exclude"\n' > "$CONSUMER_ROOT/evals/lib/install-harness.sh"
+chmod +x "$CONSUMER_ROOT/evals/lib/install-harness.sh"
+cp "$ROOT/evals/drivers/mock.sh" "$CONSUMER_ROOT/evals/drivers/mock.sh"
+cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$CONSUMER_ROOT/evals/scenarios/tdd-under-deadline"
+CONSUMER_RESULTS="$CONSUMER_ROOT/results"
+bash "$CONSUMER_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
+  --results-dir "$CONSUMER_RESULTS" >/dev/null 2>&1
+CONSUMER_STATUS=$?
+if [ "$CONSUMER_STATUS" -eq 0 ] &&
+   jq -e '(.runs[0].status | type == "string") and (.accounting.state == "legacy_unknown") and (.accounting.reason | contains("sync lib/accounting.py"))' "$CONSUMER_RESULTS/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: vendored consumer without new modules degrades to explicit legacy/unknown accounting"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: vendored consumer compatibility fallback"
+fi
+rm -rf "$CONSUMER_ROOT"
+
+BUILDER_ROOT=$(mktemp -d /tmp/harness-observation-builder-failure.XXXXXX)
+mkdir -p "$BUILDER_ROOT/evals/lib" "$BUILDER_ROOT/evals/drivers" "$BUILDER_ROOT/evals/scenarios"
+cp "$ROOT/evals/run.sh" "$BUILDER_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/accounting.py" "$BUILDER_ROOT/evals/lib/accounting.py"
+cp "$ROOT/evals/lib/normalize_transcript.py" "$BUILDER_ROOT/evals/lib/normalize_transcript.py"
+printf '#!/usr/bin/env python3\nraise SystemExit(1)\n' > "$BUILDER_ROOT/evals/lib/build_observations.py"
+printf '#!/bin/sh\nexit 0\n' > "$BUILDER_ROOT/evals/lib/install-harness.sh"
+chmod +x "$BUILDER_ROOT/evals/lib/install-harness.sh"
+cp "$ROOT/evals/drivers/mock.sh" "$BUILDER_ROOT/evals/drivers/mock.sh"
+cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$BUILDER_ROOT/evals/scenarios/tdd-under-deadline"
+BUILDER_RESULTS="$BUILDER_ROOT/results"
+bash "$BUILDER_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
+  --results-dir "$BUILDER_RESULTS" >/dev/null 2>&1
+BUILDER_STATUS=$?
+if [ "$BUILDER_STATUS" -eq 0 ] &&
+   jq -e '(.status == "error") and (.program_id == "unknown") and (.attempt_id | length > 0) and (.current_sha | type == "string") and (.usage.total_tokens == null) and (.usage.input_tokens == null) and (.usage.cached_input_tokens == null) and (.usage.output_tokens == null) and (.usage.reasoning_output_tokens == null) and (.usage.token_state == "unknown") and (.usage.cost_state == "unknown")' "$BUILDER_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
+   jq -e '.event == "phase.gate" and .status == "error" and .summary.reason == "observation builder failed"' "$BUILDER_RESULTS/tdd-under-deadline-mock-1/observations.v1.jsonl" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: observation-builder failure emits a full typed terminal accounting fallback"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: observation-builder failure fallback"
+fi
+rm -rf "$BUILDER_ROOT"
 
 EMPTY_ROOT=$(mktemp -d /tmp/harness-empty-scenarios.XXXXXX)
 mkdir -p "$EMPTY_ROOT/evals/lib" "$EMPTY_ROOT/evals/drivers" "$EMPTY_ROOT/evals/scenarios"

@@ -292,8 +292,8 @@ def build_observations(
                       "actionable_model_output": valid_model_output})
 
     usage = accounting.normalize_usage(driver.get("usage"))
-    usage_state = usage["token_state"]
-    emit("usage.reported", usage_state, driver_ref, "info", "runtime_environment",
+    usage_state = usage["usage_state"]
+    emit("usage.reported", usage["token_state"], driver_ref, "info", "runtime_environment",
          summary={"tokens": usage["tokens"], "cost_usd": usage["cost_usd"],
                   "token_state": usage["token_state"], "cost_state": usage["cost_state"],
                   "cost_provenance": usage["cost_provenance"], "accounting": usage})
@@ -364,8 +364,8 @@ def main() -> int:
         diff_path=args.diff, phase_status=args.phase_status, program_id=args.program_id,
         issue_id=args.issue_id, attempt_id=args.attempt_id,
     )
-    args.output.write_text("".join(json.dumps(row, separators=(",", ":")) + "\n" for row in observations))
-    args.summary.write_text(json.dumps(summary, separators=(",", ":")) + "\n")
+    args.output.write_text("".join(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n" for row in observations))
+    args.summary.write_text(json.dumps(summary, separators=(",", ":"), allow_nan=False) + "\n")
     return 0
 
 

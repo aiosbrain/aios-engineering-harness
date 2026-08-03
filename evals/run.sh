@@ -18,10 +18,11 @@ ROLE=agent
 PROGRAM_ID=unknown
 ISSUE_ID=unknown
 ATTEMPT_ID=""
-OUTCOME_VERIFIED=false
+OUTCOME_ID=""
+INVOCATION_ID=""
 
 usage() {
-  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--program-id id] [--issue-id id] [--attempt-id id] [--outcome-verified] [--judge <runtime|none>] [--keep-workspaces]" >&2
+  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--program-id id] [--issue-id id] [--attempt-id id] [--outcome-id id] [--judge <runtime|none>] [--keep-workspaces]" >&2
 }
 
 cleanup_scratch() {
@@ -51,24 +52,24 @@ write_early_failure() {
   REASON=$2
   EMPTY_HASH=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   EARLY_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
-  jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
+  jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" \
     --arg runtime "$RUNTIME" --arg model "$MODEL" --arg reasoning "$REASONING" \
     --arg sha "$EARLY_SHA" --arg diff_hash "$EMPTY_HASH" --arg attribution "$ATTRIBUTION" \
     --arg reason "$REASON" \
     '{schema_version:"observations.v1",run_id:$id,phase:$phase,role:$role,runtime:$runtime,
-      program_id:$program_id,issue_id:$issue_id,attempt_id:$attempt_id,model:$model,runtime_version:"unknown",harness_sha:"unknown",reasoning_level:$reasoning,turn_id:($id+":phase"),item_id:null,sequence:1,
+      program_id:$program_id,issue_id:$issue_id,invocation_id:$invocation_id,attempt_id:$attempt_id,model:$model,runtime_version:"unknown",harness_sha:"unknown",reasoning_level:$reasoning,turn_id:($id+":phase"),item_id:null,sequence:1,
       frozen_sha:$sha,current_sha:$sha,diff_hash:$diff_hash,event:"phase.gate",status:"error",
       source_artifact:"runner",severity:"error",attribution:$attribution,summary:{reason:$reason}}' \
     > "$OBSERVATIONS"
-  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
-    '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,attempt_id:$attempt_id,run_id:$id,verdict:"error",effective_status:"error",
-      observation_count:1,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,unclassified_runtime_cost:null},issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
+  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" \
+    '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,verdict:"error",effective_status:"error",
+      observation_count:1,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
     > "$OBSERVATION_SUMMARY"
-  jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
+  jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg current_sha "$EARLY_SHA" \
     --arg model "$MODEL" --arg reason "$REASON" --arg observations "$OBSERVATIONS" \
     --arg observation_summary "$OBSERVATION_SUMMARY" --slurpfile completeness "$OBSERVATION_SUMMARY" \
     '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,model:$model,
-      status:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,attempt_id:$attempt_id,role:$role,outcome_verified:false,usage:{tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},
+      status:"error",exit_status:null,current_sha:$current_sha,reviewed_sha:"unknown",observation_verdict:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,role:$role,verified_outcome:null,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},
       artifacts:{observations:$observations,observation_summary:$observation_summary},
       observation_completeness:$completeness[0]}' > "$RUN_RECORD"
 }
@@ -85,7 +86,7 @@ while [ $# -gt 0 ]; do
     --program-id) PROGRAM_ID=${2:-}; shift 2 ;;
     --issue-id) ISSUE_ID=${2:-}; shift 2 ;;
     --attempt-id) ATTEMPT_ID=${2:-}; shift 2 ;;
-    --outcome-verified) OUTCOME_VERIFIED=true; shift ;;
+    --outcome-id) OUTCOME_ID=${2:-}; shift 2 ;;
     --judge) JUDGE=${2:-}; shift 2 ;;
     --judge-model) JUDGE_MODEL=${2:-}; shift 2 ;;
     --timeout) TIMEOUT_OVERRIDE=${2:-}; shift 2 ;;
@@ -109,6 +110,7 @@ if [ -z "$RESULTS_DIR" ]; then
 fi
 mkdir -p "$RESULTS_DIR" "$ROOT/evals/scratch"
 RESULTS_DIR=$(cd "$RESULTS_DIR" && pwd)
+INVOCATION_ID=${HARNESS_INVOCATION_ID:-"$(date -u +%Y%m%dT%H%M%SZ)-$$"}
 
 if [ "$SCENARIO" = all ]; then
   SCENARIOS=()
@@ -141,6 +143,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
 
   for ((INDEX=1; INDEX<=RUNS; INDEX++)); do
     RUN_ID="$SCENARIO_ID-$RUNTIME-$INDEX"
+    RUN_ATTEMPT_ID=${ATTEMPT_ID:-"$INVOCATION_ID:$RUN_ID"}
     RUN_DIR="$RESULTS_DIR/$RUN_ID"
     SCRATCH_DIR=$(mktemp -d "$ROOT/evals/scratch/$RUN_ID.XXXXXX")
     WORKSPACE="$SCRATCH_DIR/workspace"
@@ -207,7 +210,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
 
     if ! jq -e 'type == "object" and (.runtime | type == "string")' "$DRIVER_RECORD" >/dev/null 2>&1; then
       jq -n --arg runtime "$RUNTIME" --argjson exit_status "$DRIVER_STATUS" \
-        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},malformed:true}' > "$DRIVER_RECORD"
+        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},malformed:true}' > "$DRIVER_RECORD"
     fi
 
     SEMANTIC_REQUIRED=$(jq -r '.semantic_required' "$SCENARIO_DIR/manifest.json")
@@ -243,20 +246,28 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     if [ "$RUNTIME" = codex ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
       OBSERVATION_SOURCE="$TRANSCRIPT"
     fi
-    if python3 "$ROOT/evals/lib/build_observations.py" \
+    if [ -f "$ROOT/evals/lib/build_observations.py" ] && [ -f "$ROOT/evals/lib/accounting.py" ] && python3 "$ROOT/evals/lib/build_observations.py" \
       --runtime "$RUNTIME" --transcript "$OBSERVATION_SOURCE" --hooks "$HOOK_TRACE" \
       --driver "$DRIVER_RECORD" --run-id "$RUN_ID" --phase "$PHASE" --role "$ROLE" \
       --reasoning "$REASONING" --frozen-sha "$FROZEN_SHA" --current-sha "$CURRENT_SHA" \
       --diff "$AFTER_DIFF" --phase-status "$STATUS" --output "$OBSERVATIONS" \
       --summary "$OBSERVATION_SUMMARY" --program-id "$PROGRAM_ID" --issue-id "$ISSUE_ID" \
-      --attempt-id "${ATTEMPT_ID:-$RUN_ID}"; then
+      --attempt-id "$RUN_ATTEMPT_ID"; then
       STATUS=$(jq -r '.effective_status' "$OBSERVATION_SUMMARY")
-    else
-      STATUS=error
-      jq -n --arg id "$RUN_ID" \
-        '{schema_version:"observations.v1",run_id:$id,verdict:"error",effective_status:"error",issues:[{severity:"error",attribution:"harness",summary:"observation builder failed"}]}' \
+    elif [ ! -f "$ROOT/evals/lib/build_observations.py" ] || [ ! -f "$ROOT/evals/lib/accounting.py" ]; then
+      # A consumer can safely receive this run.sh before the later core-module sync.
+      # Keep its legacy run/status behavior and make the missing accounting explicit.
+      jq -n --arg id "$RUN_ID" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" \
+        --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg status "$STATUS" \
+        '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,verdict:"unknown",effective_status:$status,observation_count:0,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},issues:[{severity:"warning",attribution:"harness",summary:"accounting core modules absent; consumer sync required"}]}' \
         > "$OBSERVATION_SUMMARY"
       : > "$OBSERVATIONS"
+    else
+      write_early_failure harness "observation builder failed"
+      RUN_RECORDS+=("$RUN_RECORD")
+      echo "$RUN_ID: error"
+      cleanup_scratch
+      continue
     fi
 
     TOOL_EVIDENCE=$(jq -s '
@@ -265,15 +276,26 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
        checks:(map(select(.record_type == "check")) | length)}
     ' "$TRACE" 2>/dev/null || printf '%s' '{"event_count":0,"tool_counts":{},"checks":0}')
 
+    FILE_EVIDENCE=$(python3 - "$DRIVER_RECORD" "$OBSERVATION_SUMMARY" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+print(json.dumps([{"basename": Path(name).name, "sha256": hashlib.sha256(Path(name).read_bytes()).hexdigest()} for name in sys.argv[1:]], separators=(",", ":"), allow_nan=False))
+PY
+)
+    OBSERVATION_VERDICT=$(jq -r '.verdict // "unknown"' "$OBSERVATION_SUMMARY")
     jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg status "$STATUS" --arg reasoning "$REASONING" \
-      --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" --arg role "$ROLE" --argjson outcome_verified "$OUTCOME_VERIFIED" \
+      --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg role "$ROLE" --arg outcome_id "$OUTCOME_ID" --arg current_sha "$CURRENT_SHA" --arg observation_verdict "$OBSERVATION_VERDICT" \
       --arg workspace "$WORKSPACE" --arg trace "$TRACE" --arg hook_trace "$HOOK_TRACE" --arg before "$BEFORE_DIFF" --arg after "$AFTER_DIFF" \
       --argjson driver "$(cat "$DRIVER_RECORD")" --argjson grade "$(cat "$GRADE")" --argjson forbidden_hit "$FORBIDDEN_HIT" \
-      --argjson judge "$(cat "$JUDGE_RECORD")" --argjson changed "$CHANGED_PATHS" --argjson evidence "$TOOL_EVIDENCE" '
-      {schema_version:"1.0",program_id:$program_id,issue_id:$issue_id,phase:$phase,attempt_id:$attempt_id,run_id:$id,role:$role,outcome_verified:$outcome_verified,scenario:$scenario,status:$status,
+      --argjson judge "$(cat "$JUDGE_RECORD")" --argjson changed "$CHANGED_PATHS" --argjson evidence "$TOOL_EVIDENCE" --argjson file_evidence "$FILE_EVIDENCE" '
+      {schema_version:"1.0",program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,role:$role,scenario:$scenario,status:$status,
        runtime:$driver.runtime,model:$driver.model,reasoning_level:($driver.reasoning_level // $reasoning),
        runtime_version:($driver.cli_version // "unknown"),harness_sha:($driver.harness_sha // "unknown"),
-       exit_status:$driver.exit_status,duration_ms:$driver.duration_ms,
+       exit_status:$driver.exit_status,current_sha:$current_sha,reviewed_sha:(if $outcome_id == "" then "unknown" else $current_sha end),observation_verdict:$observation_verdict,duration_ms:$driver.duration_ms,
+       verified_outcome:(if $outcome_id != "" and $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then {outcome_id:$outcome_id,verification_id:$attempt_id,verifier_role:$role,terminal_status:"pass",reviewed_sha:$current_sha,evidence:$file_evidence} else null end),
+       outcome_claim_status:(if $outcome_id == "" then "not_requested" elif $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then "accepted" else "rejected" end),
        reason:($driver.reason // null),usage:$driver.usage,tool_evidence:$evidence,checks:$grade.checks,semantic_judge:$judge,
        changed_paths:$changed,forbidden_path_hit:$forbidden_hit,artifacts:{workspace:$workspace,trace:$trace,hook_trace:$hook_trace,before_diff:$before,after_diff:$after,
        transcript:($driver.transcript // null),final:($driver.final // null)}}
@@ -302,15 +324,20 @@ jq -s '
      passed:([.[] | select(.status == "pass")] | length),duration_ms:(map(.duration_ms // 0) | add),
      tokens:(map(.usage.tokens) | if any(.[]; . == null) then null elif length == 0 then null else add end),
      cost_usd:null})),
-   runs:map({program_id,issue_id,phase,attempt_id,run_id,role,outcome_verified,scenario,runtime,model,status,duration_ms,tool_evidence,usage,forbidden_path_hit,
+   runs:map({program_id,issue_id,phase,invocation_id,attempt_id,run_id,role,verified_outcome,outcome_claim_status,scenario,runtime,model,status,exit_status,current_sha,reviewed_sha,duration_ms,tool_evidence,usage,forbidden_path_hit,
      observation_verdict:(.observation_completeness.verdict // "missing")})}
 ' "${RUN_RECORDS[@]}" > "$RESULTS_DIR/summary.json"
 
-if ! python3 "$ROOT/evals/lib/accounting.py" --output "$RESULTS_DIR/accounting.json" "${RUN_RECORDS[@]}"; then
-  echo "accounting aggregation failed" >&2
-  exit 1
+if [ -f "$ROOT/evals/lib/accounting.py" ]; then
+  if ! python3 "$ROOT/evals/lib/accounting.py" --output "$RESULTS_DIR/accounting.json" "${RUN_RECORDS[@]}"; then
+    echo "accounting aggregation failed" >&2
+    exit 1
+  fi
+  jq --slurpfile accounting "$RESULTS_DIR/accounting.json" '.accounting=$accounting[0]' \
+    "$RESULTS_DIR/summary.json" > "$RESULTS_DIR/summary.json.tmp" && mv "$RESULTS_DIR/summary.json.tmp" "$RESULTS_DIR/summary.json"
+else
+  jq '.accounting={schema_version:"accounting.v1",state:"legacy_unknown",reason:"accounting core module absent; sync lib/accounting.py and lib/build_observations.py"}' \
+    "$RESULTS_DIR/summary.json" > "$RESULTS_DIR/summary.json.tmp" && mv "$RESULTS_DIR/summary.json.tmp" "$RESULTS_DIR/summary.json"
 fi
-jq --slurpfile accounting "$RESULTS_DIR/accounting.json" '.accounting=$accounting[0]' \
-  "$RESULTS_DIR/summary.json" > "$RESULTS_DIR/summary.json.tmp" && mv "$RESULTS_DIR/summary.json.tmp" "$RESULTS_DIR/summary.json"
 
 echo "results: $RESULTS_DIR/summary.json"
