@@ -38,6 +38,18 @@ Optional flags include `--model`, `--reasoning`, `--phase`, `--role`, `--timeout
 workspace — useful when debugging a real, non-mock run). Credentials come only from the
 installed runtime; the lab never reads or stores credential configuration.
 
+`--program-id`, `--issue-id`, and `--attempt-id` provide stable accounting identity;
+their backward-compatible default is `unknown`/the generated run ID. Mark an outcome
+independently verified only with explicit `--outcome-verified`. `summary.json` includes
+an `accounting` section that preserves total, input, cached-input, output, and
+reasoning-output dimensions without double-counting the two subset dimensions. An
+unknown attempt leaves the all-attempt total null while exposing a labelled known-only
+subtotal and unknown-attempt count. Costs are grouped by provenance and currency, never
+folded into an unlabeled total: `runtime_reported`, `pricing_estimate`,
+`allocated_subscription`, or `unknown`. Estimates require caller-supplied versioned
+catalog/model/service tier/currency/timestamp/formula provenance; allocations require
+explicit allocation metadata. The harness ships no live pricing catalog.
+
 Each run creates an isolated temporary Git repository, installs a copy of the harness,
 passes the scenario prompt to a driver, grades deterministic evidence, and emits a run
 JSON plus an aggregate `summary.json`. Run records contain runtime/model, exit and
@@ -52,6 +64,15 @@ contradictory JSONL, or a missing required headless Codex session hook makes a C
 run `needs_review` or `error`; it can never remain `pass`. Token or cost absence is
 recorded as `unknown`, never zero. Test commands behind a shell pipeline are not
 authoritative unless pipe-failure propagation is proven.
+
+The sanitized historical replay fixtures under `fixtures/accounting/` contain only
+driver/observation artifact basenames, hashes, stable identities, statuses, and token
+facts. AIO-695 retains six attempts: five known-token attempts sum to 7,085,001 and one
+is token-unknown; all six costs remain unknown. AIO-691 retains seven deterministic
+source-driver attempts (one token-unknown) with known-token subtotal 7,138,031 and one
+explicitly verified final-review outcome. A same-run conflicting historical telemetry
+artifact is deliberately excluded from that retained chain and documented in the fixture;
+the live aggregator instead fails closed on such a collision.
 
 `hook-events.jsonl` preserves the raw adapter and fixture trace. `events.jsonl` keeps
 transcript-derived events in their original order while reconciling matching check

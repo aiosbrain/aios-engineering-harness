@@ -88,8 +88,8 @@ for REQUIRED in hooks.SessionStart hooks.SubagentStart hooks.UserPromptSubmit ho
   grep -F "$REQUIRED" "$CASE_C/run/argv.txt" >/dev/null 2>&1 || { report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 1; continue; }
   report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 0
 done
-jq -e '.usage.tokens == 2 and .usage.cost_usd == null' "$CASE_C/run/driver.json" >/dev/null 2>&1
-report "codex.sh: complete token usage is summed while cost remains unknown" $?
+jq -e '.usage.tokens == 2 and .usage.cost_usd == null and .usage.token_state == "reported" and .usage.cost_state == "unknown" and .usage.cost_provenance == "unknown"' "$CASE_C/run/driver.json" >/dev/null 2>&1
+report "codex.sh: complete token usage is summed with explicit unknown cost state" $?
 
 # Case D: a present-but-partial usage object must not be coerced to zero.
 CASE_D="$TMP/case-d"

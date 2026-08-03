@@ -28,9 +28,14 @@ record shapes:
   clobber a consumer's own mock rubrics.
 - `lib/exec_timeout.py` — timeout-wrapped subprocess exec with captured stdout/stderr.
 - `lib/normalize_transcript.py` — runtime-specific transcript → generic `events.jsonl`.
-- `lib/build_observations.py` — sanitized lifecycle, attribution, Git binding, and
-  completeness records in backward-compatible `observations.v1.jsonl`; incomplete
-  telemetry can downgrade a run but never upgrade one.
+- `lib/build_observations.py`, `lib/accounting.py` — sanitized lifecycle, attribution,
+  Git binding, completeness, and backward-compatible `observations.v1` accounting.
+  Accounting keeps total/input/cached-input/output/reasoning-output dimensions separate;
+  cached input and reasoning output are subsets, never additive dimensions. Costs are
+  only `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
+  Missing values remain null, caller-supplied estimate/allocation provenance is required,
+  and aggregation deduplicates identical attempt replays while rejecting conflicting
+  identities. Incomplete telemetry can downgrade a run but never upgrade one.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
   runtime CLIs. Verified harness-agnostic: no reference to `.harness/`, `AGENTS.md`, or
   any file `lib/install-harness.sh` creates.

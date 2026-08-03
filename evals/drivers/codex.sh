@@ -93,8 +93,10 @@ USAGE=$(jq -s '
   {tokens:(if (($u.input_tokens | type) == "number" and ($u.output_tokens | type) == "number")
            then ($u.input_tokens + $u.output_tokens) else null end),
    input_tokens:($u.input_tokens // null),cached_input_tokens:($u.cached_input_tokens // null),
-   output_tokens:($u.output_tokens // null),reasoning_output_tokens:($u.reasoning_output_tokens // null),cost_usd:null}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"cost_usd":null}')
+   output_tokens:($u.output_tokens // null),reasoning_output_tokens:($u.reasoning_output_tokens // null),cost_usd:null} as $usage |
+  $usage + {token_state:(if $usage.tokens == null then "unknown" else "reported" end),
+             cost_state:"unknown",cost_provenance:"unknown"}
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"input_tokens":null,"cached_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown"}')
 jq -n --arg runtime codex --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg harness_sha "$(git -C "$HARNESS_ROOT" rev-parse HEAD 2>/dev/null || printf '%s' unknown)" \
   --arg reasoning "$REASONING" --arg cli_version "${CLI_VERSION:-unknown}" \

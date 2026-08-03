@@ -134,6 +134,7 @@ fi
 FORBIDDEN_ROOT=$(mktemp -d /tmp/harness-forbidden.XXXXXX)
 mkdir -p "$FORBIDDEN_ROOT/evals/lib" "$FORBIDDEN_ROOT/evals/drivers" "$FORBIDDEN_ROOT/evals/scenarios/tamper-scenario"
 cp "$ROOT/evals/run.sh" "$FORBIDDEN_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/accounting.py" "$FORBIDDEN_ROOT/evals/lib/accounting.py"
 cp "$ROOT/evals/lib/build_observations.py" "$FORBIDDEN_ROOT/evals/lib/build_observations.py"
 cp "$ROOT/evals/lib/normalize_transcript.py" "$FORBIDDEN_ROOT/evals/lib/normalize_transcript.py"
 printf '#!/bin/sh\nexit 0\n' > "$FORBIDDEN_ROOT/evals/lib/install-harness.sh"

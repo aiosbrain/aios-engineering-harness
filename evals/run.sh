@@ -15,9 +15,13 @@ KEEP_WORKSPACES=false
 REASONING=default
 PHASE=scenario
 ROLE=agent
+PROGRAM_ID=unknown
+ISSUE_ID=unknown
+ATTEMPT_ID=""
+OUTCOME_VERIFIED=false
 
 usage() {
-  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--judge <runtime|none>] [--keep-workspaces]" >&2
+  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--program-id id] [--issue-id id] [--attempt-id id] [--outcome-verified] [--judge <runtime|none>] [--keep-workspaces]" >&2
 }
 
 cleanup_scratch() {
@@ -47,24 +51,24 @@ write_early_failure() {
   REASON=$2
   EMPTY_HASH=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   EARLY_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
-  jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" \
+  jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
     --arg runtime "$RUNTIME" --arg model "$MODEL" --arg reasoning "$REASONING" \
     --arg sha "$EARLY_SHA" --arg diff_hash "$EMPTY_HASH" --arg attribution "$ATTRIBUTION" \
     --arg reason "$REASON" \
     '{schema_version:"observations.v1",run_id:$id,phase:$phase,role:$role,runtime:$runtime,
-      model:$model,runtime_version:"unknown",harness_sha:"unknown",reasoning_level:$reasoning,turn_id:($id+":phase"),item_id:null,sequence:1,
+      program_id:$program_id,issue_id:$issue_id,attempt_id:$attempt_id,model:$model,runtime_version:"unknown",harness_sha:"unknown",reasoning_level:$reasoning,turn_id:($id+":phase"),item_id:null,sequence:1,
       frozen_sha:$sha,current_sha:$sha,diff_hash:$diff_hash,event:"phase.gate",status:"error",
       source_artifact:"runner",severity:"error",attribution:$attribution,summary:{reason:$reason}}' \
     > "$OBSERVATIONS"
-  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" \
-    '{schema_version:"observations.v1",run_id:$id,verdict:"error",effective_status:"error",
-      observation_count:1,usage_state:"unknown",issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
+  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
+    '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,attempt_id:$attempt_id,run_id:$id,verdict:"error",effective_status:"error",
+      observation_count:1,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,unclassified_runtime_cost:null},issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
     > "$OBSERVATION_SUMMARY"
-  jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" \
+  jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" \
     --arg model "$MODEL" --arg reason "$REASON" --arg observations "$OBSERVATIONS" \
     --arg observation_summary "$OBSERVATION_SUMMARY" --slurpfile completeness "$OBSERVATION_SUMMARY" \
     '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,model:$model,
-      status:"error",reason:$reason,duration_ms:0,usage:{tokens:null,cost_usd:null},
+      status:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,attempt_id:$attempt_id,role:$role,outcome_verified:false,usage:{tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},
       artifacts:{observations:$observations,observation_summary:$observation_summary},
       observation_completeness:$completeness[0]}' > "$RUN_RECORD"
 }
@@ -78,6 +82,10 @@ while [ $# -gt 0 ]; do
     --reasoning) REASONING=${2:-}; shift 2 ;;
     --phase) PHASE=${2:-}; shift 2 ;;
     --role) ROLE=${2:-}; shift 2 ;;
+    --program-id) PROGRAM_ID=${2:-}; shift 2 ;;
+    --issue-id) ISSUE_ID=${2:-}; shift 2 ;;
+    --attempt-id) ATTEMPT_ID=${2:-}; shift 2 ;;
+    --outcome-verified) OUTCOME_VERIFIED=true; shift ;;
     --judge) JUDGE=${2:-}; shift 2 ;;
     --judge-model) JUDGE_MODEL=${2:-}; shift 2 ;;
     --timeout) TIMEOUT_OVERRIDE=${2:-}; shift 2 ;;
@@ -199,7 +207,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
 
     if ! jq -e 'type == "object" and (.runtime | type == "string")' "$DRIVER_RECORD" >/dev/null 2>&1; then
       jq -n --arg runtime "$RUNTIME" --argjson exit_status "$DRIVER_STATUS" \
-        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,cost_usd:null},malformed:true}' > "$DRIVER_RECORD"
+        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},malformed:true}' > "$DRIVER_RECORD"
     fi
 
     SEMANTIC_REQUIRED=$(jq -r '.semantic_required' "$SCENARIO_DIR/manifest.json")
@@ -240,7 +248,8 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
       --driver "$DRIVER_RECORD" --run-id "$RUN_ID" --phase "$PHASE" --role "$ROLE" \
       --reasoning "$REASONING" --frozen-sha "$FROZEN_SHA" --current-sha "$CURRENT_SHA" \
       --diff "$AFTER_DIFF" --phase-status "$STATUS" --output "$OBSERVATIONS" \
-      --summary "$OBSERVATION_SUMMARY"; then
+      --summary "$OBSERVATION_SUMMARY" --program-id "$PROGRAM_ID" --issue-id "$ISSUE_ID" \
+      --attempt-id "${ATTEMPT_ID:-$RUN_ID}"; then
       STATUS=$(jq -r '.effective_status' "$OBSERVATION_SUMMARY")
     else
       STATUS=error
@@ -257,10 +266,11 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     ' "$TRACE" 2>/dev/null || printf '%s' '{"event_count":0,"tool_counts":{},"checks":0}')
 
     jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg status "$STATUS" --arg reasoning "$REASONING" \
+      --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg attempt_id "${ATTEMPT_ID:-$RUN_ID}" --arg role "$ROLE" --argjson outcome_verified "$OUTCOME_VERIFIED" \
       --arg workspace "$WORKSPACE" --arg trace "$TRACE" --arg hook_trace "$HOOK_TRACE" --arg before "$BEFORE_DIFF" --arg after "$AFTER_DIFF" \
       --argjson driver "$(cat "$DRIVER_RECORD")" --argjson grade "$(cat "$GRADE")" --argjson forbidden_hit "$FORBIDDEN_HIT" \
       --argjson judge "$(cat "$JUDGE_RECORD")" --argjson changed "$CHANGED_PATHS" --argjson evidence "$TOOL_EVIDENCE" '
-      {schema_version:"1.0",run_id:$id,scenario:$scenario,status:$status,
+      {schema_version:"1.0",program_id:$program_id,issue_id:$issue_id,phase:$phase,attempt_id:$attempt_id,run_id:$id,role:$role,outcome_verified:$outcome_verified,scenario:$scenario,status:$status,
        runtime:$driver.runtime,model:$driver.model,reasoning_level:($driver.reasoning_level // $reasoning),
        runtime_version:($driver.cli_version // "unknown"),harness_sha:($driver.harness_sha // "unknown"),
        exit_status:$driver.exit_status,duration_ms:$driver.duration_ms,
@@ -290,10 +300,17 @@ jq -s '
    runtimes:(group_by([.runtime,.model,.reasoning_level]) | map({runtime:.[0].runtime,model:.[0].model,
      reasoning_level:(.[0].reasoning_level // "unknown"),runtime_version:(.[0].runtime_version // "unknown"),runs:length,
      passed:([.[] | select(.status == "pass")] | length),duration_ms:(map(.duration_ms // 0) | add),
-     tokens:(map(.usage.tokens // empty) | if length == 0 then null else add end),
-     cost_usd:(map(.usage.cost_usd // empty) | if length == 0 then null else add end)})),
-   runs:map({run_id,scenario,runtime,model,status,duration_ms,tool_evidence,usage,forbidden_path_hit,
+     tokens:(map(.usage.tokens) | if any(.[]; . == null) then null elif length == 0 then null else add end),
+     cost_usd:null})),
+   runs:map({program_id,issue_id,phase,attempt_id,run_id,role,outcome_verified,scenario,runtime,model,status,duration_ms,tool_evidence,usage,forbidden_path_hit,
      observation_verdict:(.observation_completeness.verdict // "missing")})}
 ' "${RUN_RECORDS[@]}" > "$RESULTS_DIR/summary.json"
+
+if ! python3 "$ROOT/evals/lib/accounting.py" --output "$RESULTS_DIR/accounting.json" "${RUN_RECORDS[@]}"; then
+  echo "accounting aggregation failed" >&2
+  exit 1
+fi
+jq --slurpfile accounting "$RESULTS_DIR/accounting.json" '.accounting=$accounting[0]' \
+  "$RESULTS_DIR/summary.json" > "$RESULTS_DIR/summary.json.tmp" && mv "$RESULTS_DIR/summary.json.tmp" "$RESULTS_DIR/summary.json"
 
 echo "results: $RESULTS_DIR/summary.json"

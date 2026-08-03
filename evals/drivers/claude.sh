@@ -29,10 +29,15 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   ([.[] | select(.type == "result")] | last // {}) as $r | ($r.usage // {}) as $u |
-  {tokens:(if ($u | length) == 0 then null else (($u.input_tokens // 0) + ($u.output_tokens // 0)) end),
-   input_tokens:($u.input_tokens // null),cache_read_input_tokens:($u.cache_read_input_tokens // null),
-   output_tokens:($u.output_tokens // null),cost_usd:($r.total_cost_usd // null)}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"cost_usd":null}')
+  {tokens:(if (($u.input_tokens | type) == "number" and ($u.output_tokens | type) == "number")
+           then ($u.input_tokens + $u.output_tokens) else null end),
+   input_tokens:($u.input_tokens // null),cached_input_tokens:($u.cache_read_input_tokens // null),
+   cache_read_input_tokens:($u.cache_read_input_tokens // null),output_tokens:($u.output_tokens // null),
+   reasoning_output_tokens:null,cost_usd:($r.total_cost_usd // null)} as $usage |
+  $usage + {token_state:(if $usage.tokens == null then "unknown" else "reported" end),
+             cost_state:"unknown",cost_provenance:"unknown",
+             unclassified_runtime_cost:(if ($usage.cost_usd | type) == "number" then {amount:$usage.cost_usd,currency:"USD"} else null end)}
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"input_tokens":null,"cached_input_tokens":null,"cache_read_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","unclassified_runtime_cost":null}')
 jq -n --arg runtime claude --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg stderr "$STDERR" --arg reason "${UNAVAILABLE_REASON:-}" --argjson exit_status "$STATUS" \
   --argjson duration_ms "$(( (END-START)*1000 ))" --argjson usage "$USAGE" \

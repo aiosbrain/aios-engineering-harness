@@ -25,12 +25,16 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   [.[] | select(.type == "step_finish") | .part] as $steps |
-  {tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.total // 0) | add) end),
-   input_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.input // 0) | add) end),
-   output_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.output // 0) | add) end),
-   reasoning_output_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.reasoning // 0) | add) end),
-   cost_usd:(if ($steps | length) == 0 then null else ($steps | map(.cost // 0) | add) end)}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"cost_usd":null}')
+  def sum_complete(path):
+    if ($steps | length) == 0 or any($steps[]; (path | type) != "number") then null
+    else [$steps[] | path] | add end;
+  {tokens:sum_complete(.tokens.total),input_tokens:sum_complete(.tokens.input),
+   cached_input_tokens:null,output_tokens:sum_complete(.tokens.output),
+   reasoning_output_tokens:sum_complete(.tokens.reasoning),cost_usd:sum_complete(.cost)} as $usage |
+  $usage + {token_state:(if $usage.tokens == null then "unknown" else "reported" end),
+             cost_state:"unknown",cost_provenance:"unknown",
+             unclassified_runtime_cost:(if ($usage.cost_usd | type) == "number" then {amount:$usage.cost_usd,currency:"USD"} else null end)}
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"input_tokens":null,"cached_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","unclassified_runtime_cost":null}')
 jq -n --arg runtime opencode --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg stderr "$STDERR" --arg reason "${UNAVAILABLE_REASON:-}" --argjson exit_status "$STATUS" \
   --argjson duration_ms "$(( (END-START)*1000 ))" --argjson usage "$USAGE" \
