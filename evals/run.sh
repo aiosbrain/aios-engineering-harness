@@ -19,10 +19,11 @@ PROGRAM_ID=unknown
 ISSUE_ID=unknown
 ATTEMPT_ID=""
 OUTCOME_ID=""
+SUBJECT_ATTEMPT_ID=""
 INVOCATION_ID=""
 
 usage() {
-  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--program-id id] [--issue-id id] [--attempt-id id] [--outcome-id id] [--judge <runtime|none>] [--keep-workspaces]" >&2
+  echo "usage: bash evals/run.sh --runtime <claude|codex|opencode|mock> --scenario <id|all> --runs <n> [--model id] [--reasoning level] [--phase name] [--role name] [--program-id id] [--issue-id id] [--attempt-id id] [--outcome-id id --subject-attempt-id id] [--judge <runtime|none>] [--keep-workspaces]" >&2
 }
 
 cleanup_scratch() {
@@ -87,6 +88,7 @@ while [ $# -gt 0 ]; do
     --issue-id) ISSUE_ID=${2:-}; shift 2 ;;
     --attempt-id) ATTEMPT_ID=${2:-}; shift 2 ;;
     --outcome-id) OUTCOME_ID=${2:-}; shift 2 ;;
+    --subject-attempt-id) SUBJECT_ATTEMPT_ID=${2:-}; shift 2 ;;
     --judge) JUDGE=${2:-}; shift 2 ;;
     --judge-model) JUDGE_MODEL=${2:-}; shift 2 ;;
     --timeout) TIMEOUT_OVERRIDE=${2:-}; shift 2 ;;
@@ -276,7 +278,9 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
        checks:(map(select(.record_type == "check")) | length)}
     ' "$TRACE" 2>/dev/null || printf '%s' '{"event_count":0,"tool_counts":{},"checks":0}')
 
-    FILE_EVIDENCE=$(python3 - "$DRIVER_RECORD" "$OBSERVATION_SUMMARY" <<'PY'
+    EVIDENCE_PATHS=("$DRIVER_RECORD" "$OBSERVATION_SUMMARY")
+    [ ! -f "$RUN_DIR/final.md" ] || EVIDENCE_PATHS+=("$RUN_DIR/final.md")
+    FILE_EVIDENCE=$(python3 - "${EVIDENCE_PATHS[@]}" <<'PY'
 import hashlib
 import json
 import sys
@@ -286,7 +290,7 @@ PY
 )
     OBSERVATION_VERDICT=$(jq -r '.verdict // "unknown"' "$OBSERVATION_SUMMARY")
     jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg status "$STATUS" --arg reasoning "$REASONING" \
-      --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg role "$ROLE" --arg outcome_id "$OUTCOME_ID" --arg current_sha "$CURRENT_SHA" --arg observation_verdict "$OBSERVATION_VERDICT" \
+      --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg role "$ROLE" --arg outcome_id "$OUTCOME_ID" --arg subject_attempt_id "$SUBJECT_ATTEMPT_ID" --arg current_sha "$CURRENT_SHA" --arg observation_verdict "$OBSERVATION_VERDICT" \
       --arg workspace "$WORKSPACE" --arg trace "$TRACE" --arg hook_trace "$HOOK_TRACE" --arg before "$BEFORE_DIFF" --arg after "$AFTER_DIFF" \
       --argjson driver "$(cat "$DRIVER_RECORD")" --argjson grade "$(cat "$GRADE")" --argjson forbidden_hit "$FORBIDDEN_HIT" \
       --argjson judge "$(cat "$JUDGE_RECORD")" --argjson changed "$CHANGED_PATHS" --argjson evidence "$TOOL_EVIDENCE" --argjson file_evidence "$FILE_EVIDENCE" '
@@ -294,8 +298,9 @@ PY
        runtime:$driver.runtime,model:$driver.model,reasoning_level:($driver.reasoning_level // $reasoning),
        runtime_version:($driver.cli_version // "unknown"),harness_sha:($driver.harness_sha // "unknown"),
        exit_status:$driver.exit_status,current_sha:$current_sha,reviewed_sha:(if $outcome_id == "" then "unknown" else $current_sha end),observation_verdict:$observation_verdict,duration_ms:$driver.duration_ms,
-       verified_outcome:(if $outcome_id != "" and $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then {outcome_id:$outcome_id,verification_id:$attempt_id,verifier_role:$role,terminal_status:"pass",reviewed_sha:$current_sha,evidence:$file_evidence} else null end),
-       outcome_claim_status:(if $outcome_id == "" then "not_requested" elif $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then "accepted" else "rejected" end),
+       source_artifacts:$file_evidence,
+       verified_outcome:(if $outcome_id != "" and $subject_attempt_id != "" and $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then {outcome_id:$outcome_id,verification_id:$attempt_id,verifier_role:$role,subject_attempt_id:$subject_attempt_id,terminal_status:"pass",reviewed_sha:$current_sha,decision:"READY",evidence:$file_evidence} else null end),
+       outcome_claim_status:(if $outcome_id == "" then "not_requested" elif $subject_attempt_id != "" and $status == "pass" and $driver.exit_status == 0 and $observation_verdict == "pass" and ($role == "reviewer" or $role == "verifier") then "accepted" else "rejected" end),
        reason:($driver.reason // null),usage:$driver.usage,tool_evidence:$evidence,checks:$grade.checks,semantic_judge:$judge,
        changed_paths:$changed,forbidden_path_hit:$forbidden_hit,artifacts:{workspace:$workspace,trace:$trace,hook_trace:$hook_trace,before_diff:$before,after_diff:$after,
        transcript:($driver.transcript // null),final:($driver.final // null)}}

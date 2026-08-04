@@ -29,14 +29,16 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   ([.[] | select(.type == "result")] | last // {}) as $r | ($r.usage // {}) as $u |
-  {tokens:($u.total_tokens // null),total_tokens:($u.total_tokens // null),
-   input_tokens:($u.input_tokens // null),cached_input_tokens:($u.cache_read_input_tokens // null),
-   cache_read_input_tokens:($u.cache_read_input_tokens // null),output_tokens:($u.output_tokens // null),
-   reasoning_output_tokens:null,cost_usd:($r.total_cost_usd // null)} as $usage |
+  def token: if type == "number" and isfinite and . >= 0 and floor == . then . else null end;
+  def cost: if type == "number" and isfinite and . >= 0 then . else null end;
+  {tokens:($u.total_tokens | token),total_tokens:($u.total_tokens | token),
+   input_tokens:($u.input_tokens | token),cached_input_tokens:($u.cache_read_input_tokens | token),
+   cache_read_input_tokens:($u.cache_read_input_tokens | token),output_tokens:($u.output_tokens | token),
+   reasoning_output_tokens:null,cost_usd:($r.total_cost_usd | cost)} as $usage |
   $usage + {token_state:(if ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | all(.[]; type == "number")) then "complete" elif ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | any(.[]; type == "number")) then "partial" else "unknown" end),
-             cost_state:(if ($usage.cost_usd | type) == "number" then "runtime_reported" else "unknown" end),
-             cost_provenance:(if ($usage.cost_usd | type) == "number" then "runtime_reported" else "unknown" end),
-             runtime_cost:(if ($usage.cost_usd | type) == "number" then {source_field:"result.total_cost_usd",semantics:"runtime_reported_not_billed_or_actual"} else null end)}
+             cost_state:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
+             cost_provenance:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
+             runtime_cost:(if $usage.cost_usd != null then {source_field:"result.total_cost_usd",semantics:"runtime_reported_not_billed_or_actual"} else null end)}
 ' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"cache_read_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","runtime_cost":null}')
 jq -n --arg runtime claude --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg stderr "$STDERR" --arg reason "${UNAVAILABLE_REASON:-}" --argjson exit_status "$STATUS" \

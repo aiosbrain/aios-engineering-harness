@@ -15,7 +15,8 @@ from typing import Any
 
 COST_PROVENANCES = {"runtime_reported", "pricing_estimate", "allocated_subscription", "unknown"}
 TOKEN_KEYS = ("total_tokens", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
-IDENTITY_KEYS = ("program_id", "issue_id", "phase", "attempt_id")
+IDENTITY_KEYS = ("program_id", "issue_id", "phase", "attempt_id", "invocation_id", "run_id")
+LOGICAL_ATTEMPT_KEYS = ("program_id", "issue_id", "phase", "attempt_id")
 SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -227,14 +228,27 @@ def normalize_verified_outcome(attempt: dict[str, Any]) -> dict[str, Any] | None
     reviewed_sha = sha(raw.get("reviewed_sha"))
     evidence = normalize_evidence(raw.get("evidence"))
     role = text(raw.get("verifier_role"))
-    if not outcome_id or not verification_id or role not in {"reviewer", "verifier"} or raw.get("terminal_status") != "pass":
+    subject_attempt_id = text(raw.get("subject_attempt_id"))
+    if not outcome_id or not verification_id or not subject_attempt_id or role not in {"reviewer", "verifier"} or raw.get("terminal_status") != "pass" or raw.get("decision") != "READY":
+        return None
+    if attempt.get("role") != role or verification_id != attempt.get("attempt_id"):
         return None
     if attempt.get("status") != "pass" or attempt.get("exit_status") != 0 or attempt.get("observation_verdict") != "pass":
         return None
-    if reviewed_sha is None or reviewed_sha != sha(attempt.get("current_sha")) or evidence is None:
+    sources = normalize_evidence(attempt.get("source_artifacts"))
+    required = {"driver.json", "observations.v1.summary.json", "final.md"}
+    if reviewed_sha is None or reviewed_sha != sha(attempt.get("current_sha")) or evidence is None or sources is None:
         return None
-    return {"outcome_id": outcome_id, "verification_id": verification_id, "verifier_role": role,
-            "terminal_status": "pass", "reviewed_sha": reviewed_sha, "evidence": evidence}
+    if len(evidence) != len(required) or {item["basename"] for item in evidence} != required:
+        return None
+    source_by_name = {item["basename"]: item["sha256"] for item in sources}
+    if any(source_by_name.get(item["basename"]) != item["sha256"] for item in evidence):
+        return None
+    canonical_id = "/".join((text(attempt.get("program_id")) or "unknown", text(attempt.get("issue_id")) or "unknown", reviewed_sha))
+    return {"outcome_id": canonical_id, "display_outcome_id": outcome_id, "verification_id": verification_id,
+            "verifier_role": role, "subject_attempt_id": subject_attempt_id, "terminal_status": "pass",
+            "reviewed_sha": reviewed_sha, "decision": "READY", "evidence": evidence,
+            "verifier_identity": attempt_identity(attempt)}
 
 
 def attempt_from_driver(driver: dict[str, Any], identity: dict[str, Any]) -> dict[str, Any]:
@@ -250,11 +264,16 @@ def attempt_from_driver(driver: dict[str, Any], identity: dict[str, Any]) -> dic
         "current_sha": text(identity.get("current_sha")) or "unknown", "reviewed_sha": text(identity.get("reviewed_sha")) or "unknown",
         "observation_verdict": text(identity.get("observation_verdict")) or "unknown",
         "usage": normalize_usage(driver.get("usage")), "verified_outcome": identity.get("verified_outcome"),
+        "source_artifacts": identity.get("source_artifacts"),
     }
 
 
 def attempt_identity(attempt: dict[str, Any]) -> tuple[str, ...]:
     return tuple(text(attempt.get(key)) or "unknown" for key in IDENTITY_KEYS)
+
+
+def logical_attempt_identity(attempt: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(text(attempt.get(key)) or "unknown" for key in LOGICAL_ATTEMPT_KEYS)
 
 
 def canonical_attempt(attempt: dict[str, Any]) -> str:
@@ -290,15 +309,25 @@ def summarize(attempts: list[dict[str, Any]]) -> dict[str, Any]:
     return {"attempt_count": len(attempts), "by_status": statuses, "tokens": dimensions, "costs": costs}
 
 
+def terminal_subject(attempt: dict[str, Any], verifier: dict[str, Any], subject_attempt_id: str, reviewed_sha: str) -> bool:
+    return attempt.get("program_id") == verifier.get("program_id") and attempt.get("issue_id") == verifier.get("issue_id") and \
+        attempt.get("attempt_id") == subject_attempt_id and attempt.get("role") in {"writer", "implementer"} and \
+        attempt.get("status") == "pass" and attempt.get("exit_status") == 0 and attempt.get("observation_verdict") == "pass" and \
+        sha(attempt.get("current_sha")) == reviewed_sha and attempt.get("attempt_id") != verifier.get("attempt_id") and \
+        attempt.get("invocation_id") != verifier.get("invocation_id")
+
+
 def verified_outcomes(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     outcomes: dict[str, dict[str, Any]] = {}
     for attempt in attempts:
         outcome = normalize_verified_outcome(attempt)
         if outcome is None:
             continue
+        if not any(terminal_subject(subject, attempt, outcome["subject_attempt_id"], outcome["reviewed_sha"]) for subject in attempts):
+            continue
         previous = outcomes.get(outcome["outcome_id"])
-        comparable = {key: value for key, value in outcome.items() if key != "verification_id"}
-        if previous is not None and {key: value for key, value in previous.items() if key != "verification_id"} != comparable:
+        comparable = {key: value for key, value in outcome.items() if key not in {"verification_id", "verifier_identity", "display_outcome_id"}}
+        if previous is not None and {key: value for key, value in previous.items() if key not in {"verification_id", "verifier_identity", "display_outcome_id"}} != comparable:
             raise ValueError("conflicting verified outcome: " + outcome["outcome_id"])
         outcomes.setdefault(outcome["outcome_id"], outcome)
     return [outcomes[key] for key in sorted(outcomes)]
@@ -319,9 +348,20 @@ def aggregate_attempts(records: list[dict[str, Any]]) -> dict[str, Any]:
         else:
             raise ValueError("conflicting duplicate identity: " + "/".join(key))
     attempts = [unique[key] for key in sorted(unique)]
-    overall = summarize(attempts)
     outcomes = verified_outcomes(attempts)
-    by_attempt = {"/".join(attempt_identity(attempt)): summarize([attempt]) for attempt in attempts}
+    def with_outcomes(items: list[dict[str, Any]], scoped: list[dict[str, Any]]) -> dict[str, Any]:
+        result = summarize(items)
+        ids = sorted({outcome["outcome_id"] for outcome in scoped})
+        result.update({"independently_verified_outcome_count": len(ids), "independently_verified_outcome_ids": ids,
+                       "outcome_count": len(ids)})
+        return result
+
+    overall = with_outcomes(attempts, outcomes)
+    by_attempt: dict[str, dict[str, Any]] = {}
+    for key in sorted({logical_attempt_identity(attempt) for attempt in attempts}):
+        group = [attempt for attempt in attempts if logical_attempt_identity(attempt) == key]
+        scoped = [outcome for outcome in outcomes if logical_attempt_identity(next(attempt for attempt in attempts if attempt_identity(attempt) == outcome["verifier_identity"])) == key]
+        by_attempt["/".join(key)] = with_outcomes(group, scoped)
     rollups: dict[str, Any] = {"by_attempt": by_attempt, "by_phase": {}, "by_issue": {}, "by_program": {},
                                "overall_unique_attempts": overall}
     for level in ("phase", "issue_id", "program_id"):
@@ -329,8 +369,8 @@ def aggregate_attempts(records: list[dict[str, Any]]) -> dict[str, Any]:
         for attempt in attempts:
             groups.setdefault(attempt[level], []).append(attempt)
         target = {"phase": "by_phase", "issue_id": "by_issue", "program_id": "by_program"}[level]
-        rollups[target] = {key: summarize(groups[key]) for key in sorted(groups)}
-    return {**overall, "deduplicated_replays": deduplicated_replays, "outcome_count": len(outcomes),
+        rollups[target] = {key: with_outcomes(groups[key], [outcome for outcome in outcomes if next(attempt for attempt in attempts if attempt_identity(attempt) == outcome["verifier_identity"])[level] == key]) for key in sorted(groups)}
+    return {**overall, "deduplicated_replays": deduplicated_replays,
             "verified_outcomes": outcomes, "attempts": attempts, "rollups": rollups}
 
 

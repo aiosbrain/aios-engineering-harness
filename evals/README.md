@@ -38,15 +38,20 @@ Optional flags include `--model`, `--reasoning`, `--phase`, `--role`, `--timeout
 workspace — useful when debugging a real, non-mock run). Credentials come only from the
 installed runtime; the lab never reads or stores credential configuration.
 
-`--program-id`, `--issue-id`, and `--attempt-id` provide stable accounting identity.
-When no attempt ID is supplied, the runner prefixes the legacy run ID with a unique
-invocation namespace; the run ID and artifact directory stay unchanged. `--outcome-id`
-is only a claim: it counts only for a passing reviewer/verifier terminal record with
-exit 0, a passing observation verdict, its exact current SHA as `reviewed_sha`, and
-immutable driver/observation-summary hashes. A bare boolean is never evidence.
+`--program-id`, `--issue-id`, and `--attempt-id` provide stable logical accounting
+identity. Exact replay identity additionally includes invocation and run ID, so an
+explicit attempt ID can safely group every `--scenario all` run. `--outcome-id` is only
+a display claim: an independently verified outcome also requires `--subject-attempt-id`,
+a distinct passing writer/implementer attempt at the exact reviewed SHA, a passing
+reviewer/verifier terminal record, `READY`, and matching immutable `driver.json`,
+`observations.v1.summary.json`, and `final.md` hashes. Canonical outcomes are keyed by
+program, issue, and reviewed SHA; incomplete evidence counts zero.
 
 `summary.json.accounting.rollups` contains exact-once `by_attempt`, `by_phase`,
-`by_issue`, `by_program`, and explicitly labelled `overall_unique_attempts` views. The
+`by_issue`, `by_program`, and explicitly labelled `overall_unique_attempts` views.
+Each carries separately-scoped `independently_verified_outcome_count` and stable IDs
+(with legacy `outcome_count` as an alias), so cost-per-outcome calculations never merge
+cost buckets. The
 five independent token dimensions are total, input, cached input, output, and reasoning
 output. State is `complete` only when all five are reported, `partial` when any but not
 all are reported, and `unknown` when none are; legacy `usage_state` stays `reported`
@@ -80,11 +85,12 @@ authoritative unless pipe-failure propagation is proven.
 
 The sanitized historical replay fixtures under `fixtures/accounting/` retain source
 basenames and hashes, status/exit/observation verdict, current/review SHA or explicit
-`unknown`, exact retries, and retained conflict-exclusion evidence—never transcripts,
-final prose, diffs, or absolute paths. AIO-695 retains six attempts: five known-token
-attempts sum to 7,085,001 and one is token-unknown; all six costs remain unknown.
-AIO-691 retains seven attempts with known-token subtotal 7,138,031 and one verified
-final-review outcome. A same-identity contradiction fails closed during live replay.
+`unknown`, and exact retries—never transcripts, final prose, diffs, or absolute paths.
+AIO-695 retains six attempts: five known-token attempts sum to 7,085,001 and one is
+token-unknown; all six costs remain unknown. AIO-691 retains seven attempts with known
+token subtotal 7,138,031 and zero historical outcomes because no source binds a
+role-separated READY decision. Contradictory exact replays or canonical outcome evidence
+fail closed.
 
 Consumers may receive `run.sh` and drivers before the later sync of
 `lib/accounting.py` and `lib/build_observations.py`. That intermediate state runs with

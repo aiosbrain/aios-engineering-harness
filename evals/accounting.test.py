@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import re
 import tempfile
@@ -173,16 +174,15 @@ class TerminalAccountingTests(unittest.TestCase):
         retry = {**base, "attempt_id": "review-2", "run_id": "run-2",
                  "verified_outcome": {**base["verified_outcome"], "verification_id": "review-2"}}
         aggregate = ACCOUNTING.aggregate_attempts([base, retry])
-        self.assertEqual(aggregate["outcome_count"], 1)
-        self.assertEqual(aggregate["verified_outcomes"][0]["outcome_id"], "AIO-709:fixed")
+        self.assertEqual(aggregate["outcome_count"], 0)
+        self.assertEqual(aggregate["verified_outcomes"], [])
         self.assertEqual(aggregate["rollups"]["by_phase"]["review"]["attempt_count"], 2)
 
         rejected = {**base, "status": "error"}
         self.assertEqual(ACCOUNTING.aggregate_attempts([rejected])["outcome_count"], 0)
         conflict = {**retry, "verified_outcome": {**retry["verified_outcome"], "evidence": [
             {"basename": "driver.json", "sha256": "c" * 64}]}}
-        with self.assertRaisesRegex(ValueError, "conflicting verified outcome"):
-            ACCOUNTING.aggregate_attempts([base, conflict])
+        self.assertEqual(ACCOUNTING.aggregate_attempts([base, conflict])["outcome_count"], 0)
 
     def test_replay_comparison_includes_terminal_evidence_and_status(self) -> None:
         first = {"program_id": "program", "issue_id": "AIO-709", "phase": "implementation",
@@ -243,13 +243,13 @@ class TerminalAccountingTests(unittest.TestCase):
                                                "allocated_subscription": {}, "unclassified_runtime": {},
                                                "unknown_attempts": 6})
 
-    def test_sanitized_aio_691_retains_retries_and_one_verified_outcome(self) -> None:
+    def test_sanitized_aio_691_retains_retries_without_unbound_outcome(self) -> None:
         fixture = json.loads((ROOT / "evals/fixtures/accounting/aio-691.json").read_text())
         aggregate = ACCOUNTING.aggregate_attempts(fixture["attempts"])
-        self.assertEqual(aggregate["attempt_count"], fixture["successful_chain_attempt_count"])
+        self.assertEqual(aggregate["attempt_count"], fixture["attempt_count"])
         self.assertIsNone(aggregate["tokens"]["total_tokens"])
-        self.assertEqual(aggregate["tokens"]["known_total_tokens"], fixture["successful_chain_total_tokens"])
-        self.assertEqual(aggregate["outcome_count"], 1)
+        self.assertEqual(aggregate["tokens"]["known_total_tokens"], fixture["known_total_tokens"])
+        self.assertEqual(aggregate["outcome_count"], 0)
 
     def test_historical_fixtures_retain_sanitized_terminal_evidence_and_conflict_proof(self) -> None:
         for name in ("aio-691.json", "aio-695.json"):
@@ -270,13 +270,80 @@ class TerminalAccountingTests(unittest.TestCase):
                     self.assertRegex(source["sha256"], r"^[0-9a-f]{64}$")
 
         fixture = json.loads((ROOT / "evals/fixtures/accounting/aio-691.json").read_text())
-        self.assertEqual(fixture["retained_conflict_exclusion"]["status"], "error")
-        self.assertEqual(fixture["retained_conflict_exclusion"]["observation_verdict"], "error")
-        self.assertEqual(fixture["retained_conflict_exclusion"]["source_artifacts"][0]["basename"], "observations.v1.summary.json")
-        final = next(record for record in fixture["attempts"] if record.get("verified_outcome"))
+        self.assertNotIn("retained_conflict_exclusion", fixture)
+        self.assertTrue(all("verified_outcome" not in record for record in fixture["attempts"]))
+        final = next(record for record in fixture["attempts"] if record["attempt_id"] == "workspace-review-sol-8856376-final")
         contradictory = {**final, "usage": {**final["usage"], "tokens": final["usage"]["tokens"] + 1}}
         with self.assertRaisesRegex(ValueError, "conflicting duplicate identity"):
             ACCOUNTING.aggregate_attempts([final, contradictory])
+
+    def test_historical_golden_terminal_truth_is_immutable(self) -> None:
+        goldens = {
+            "aio-691.json": [
+                ("workspace-writer-terra-59f3f00", "pass", 0, "pass", "59f3f007ff18821b650b075c95d22e11ad0f011b"),
+                ("workspace-triage-sol-59f3f00", "needs_review", 0, "pass", "59f3f007ff18821b650b075c95d22e11ad0f011b"),
+                ("workspace-triage-attempt-1", "error", 1, "error", "85e0aba875538a443872f16804b978bf9a3b99c8"),
+                ("workspace-remediation-terra-8856376", "pass", 0, "pass", "8856376b4c1f847c3681201d0deb72a7fd72aa25"),
+                ("workspace-review-sol-8856376-attempt1", "error", 0, "pass", "8856376b4c1f847c3681201d0deb72a7fd72aa25"),
+                ("workspace-review-sol-8856376-final", "pass", 0, "pass", "8856376b4c1f847c3681201d0deb72a7fd72aa25"),
+                ("workspace-rereview-sol-b9f4ac4", "pass", 0, "pass", "b9f4ac4bacfc319292d4008fc8e8b00afa0138d2"),
+            ],
+            "aio-695.json": [
+                ("workspace-sol-review-fb40974", "pass", 0, "pass", "fb409748ee0cd428fb6a70c8283c2c8cfa106281"),
+                ("workspace-triage-sol-attempt1-4f12406", "error", 0, "pass", "4f12406aa67521eecd9a4926fa279ed34b69334b"),
+                ("workspace-triage-sol-attempt2-startup-4f12406", "error", 1, "error", "4f12406aa67521eecd9a4926fa279ed34b69334b"),
+                ("workspace-triage-sol-v3-4f12406", "needs_review", 0, "pass", "4f12406aa67521eecd9a4926fa279ed34b69334b"),
+                ("workspace-terra-writer-4f12406", "error", 0, "error", "4f12406aa67521eecd9a4926fa279ed34b69334b"),
+                ("workspace-terra-writer-v2-4f12406", "pass", 0, "pass", "4f12406aa67521eecd9a4926fa279ed34b69334b"),
+            ],
+        }
+        for name, expected in goldens.items():
+            fixture = json.loads((ROOT / "evals/fixtures/accounting" / name).read_text())
+            actual = [(row["attempt_id"], row["status"], row["exit_status"], row["observation_verdict"], row["current_sha"])
+                      for row in fixture["attempts"]]
+            self.assertEqual(actual, expected)
+            self.assertTrue(all(row["reviewed_sha"] == "unknown" for row in fixture["attempts"]))
+            self.assertEqual(ACCOUNTING.aggregate_attempts(fixture["attempts"])["outcome_count"], 0)
+        source_hash_goldens = {
+            "aio-691.json": "022dbe8aa9e2aa45378c7769065d2a88989d2034c42d5bb47de965ac25be4dcd",
+            "aio-695.json": "67257cb0153fbd63a61e4e63f042c045ca4669a81389c7d57a87a225a862a1cc",
+        }
+        for name, expected_hash in source_hash_goldens.items():
+            fixture = json.loads((ROOT / "evals/fixtures/accounting" / name).read_text())
+            sources = [(row["attempt_id"], row["source_artifacts"]) for row in fixture["attempts"]]
+            encoded = json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()
+            self.assertEqual(hashlib.sha256(encoded).hexdigest(), expected_hash)
+
+    def test_verified_outcomes_require_role_separated_subject_and_source_artifacts(self) -> None:
+        sha = "a" * 40
+        evidence = [
+            {"basename": "driver.json", "sha256": "b" * 64},
+            {"basename": "observations.v1.summary.json", "sha256": "c" * 64},
+            {"basename": "final.md", "sha256": "d" * 64},
+        ]
+        subject = {"program_id": "p", "issue_id": "AIO-709", "phase": "implementation", "attempt_id": "writer", "invocation_id": "i1", "run_id": "r1", "role": "writer", "status": "pass", "exit_status": 0, "current_sha": sha, "reviewed_sha": "unknown", "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence}
+        verifier = {"program_id": "p", "issue_id": "AIO-709", "phase": "review", "attempt_id": "review", "invocation_id": "i2", "run_id": "r2", "role": "reviewer", "status": "pass", "exit_status": 0, "current_sha": sha, "reviewed_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence, "verified_outcome": {"outcome_id": "free-label", "verification_id": "review", "verifier_role": "reviewer", "subject_attempt_id": "writer", "terminal_status": "pass", "reviewed_sha": sha, "decision": "READY", "evidence": evidence}}
+        aggregate = ACCOUNTING.aggregate_attempts([subject, verifier])
+        self.assertEqual(aggregate["independently_verified_outcome_count"], 1)
+        self.assertEqual(aggregate["independently_verified_outcome_ids"], ["p/AIO-709/" + sha])
+        self.assertEqual(aggregate["rollups"]["by_attempt"]["p/AIO-709/review/review"]["independently_verified_outcome_count"], 1)
+        for mutation in (
+            {"role": "writer"},
+            {"verified_outcome": {**verifier["verified_outcome"], "verification_id": "other"}},
+            {"verified_outcome": {**verifier["verified_outcome"], "decision": "NO-GO"}},
+            {"verified_outcome": {**verifier["verified_outcome"], "evidence": evidence[:2]}},
+            {"verified_outcome": {**verifier["verified_outcome"], "evidence": evidence + [evidence[0]]}},
+        ):
+            self.assertEqual(ACCOUNTING.aggregate_attempts([subject, {**verifier, **mutation}])["outcome_count"], 0)
+
+    def test_exact_replay_identity_keeps_logical_attempt_group(self) -> None:
+        base = {"program_id": "p", "issue_id": "AIO-709", "phase": "scenario", "attempt_id": "explicit", "role": "writer", "status": "pass", "exit_status": 0, "current_sha": "a" * 40, "observation_verdict": "pass", "usage": {}}
+        first = {**base, "invocation_id": "one", "run_id": "run-one"}
+        second = {**base, "invocation_id": "two", "run_id": "run-two"}
+        aggregate = ACCOUNTING.aggregate_attempts([first, second, first])
+        self.assertEqual(aggregate["attempt_count"], 2)
+        self.assertEqual(aggregate["deduplicated_replays"], 1)
+        self.assertEqual(list(aggregate["rollups"]["by_attempt"]), ["p/AIO-709/scenario/explicit"])
 
 
 if __name__ == "__main__":

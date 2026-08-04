@@ -66,11 +66,19 @@ else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate accounting rollups"
 fi
 
+EXPLICIT_ALL_DIR="$ROOT/evals/results/$STAMP-all-explicit"
+bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --attempt-id logical-all --results-dir "$EXPLICIT_ALL_DIR" >/dev/null
+if jq -e --argjson n "$EXPECTED_TOTAL" '.total == $n and (.runs | length) == $n and ([.runs[] | .attempt_id == "logical-all"] | all) and ([.runs[] | [.invocation_id,.run_id] | @json] | unique | length) == $n and (.accounting.rollups.by_attempt | length) == 1 and .accounting.rollups.by_attempt["unknown/unknown/scenario/logical-all"].attempt_count == $n' "$EXPLICIT_ALL_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: explicit attempt ID groups all scenario runs without replay collisions"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: explicit attempt ID replay identity"
+fi
+
 OUTCOME_DIR="$ROOT/evals/results/$STAMP-outcome"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 --phase review --role reviewer \
   --program-id eval-program --issue-id AIO-709 --outcome-id AIO-709:mock-verified --results-dir "$OUTCOME_DIR" >/dev/null
-if jq -e '.accounting.outcome_count == 1 and .accounting.verified_outcomes[0].outcome_id == "AIO-709:mock-verified" and .runs[0].verified_outcome.reviewed_sha == .runs[0].current_sha and (.runs[0].verified_outcome.evidence | length == 2)' "$OUTCOME_DIR/summary.json" >/dev/null; then
-  PASS=$((PASS+1)); echo "PASS: passing reviewer outcome has SHA-bound immutable evidence"
+if jq -e '.accounting.outcome_count == 0 and .runs[0].verified_outcome == null and .runs[0].outcome_claim_status == "rejected"' "$OUTCOME_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: incomplete reviewer evidence cannot claim an independently verified outcome"
 else
   FAIL=$((FAIL+1)); echo "FAIL: verified outcome accounting"
 fi

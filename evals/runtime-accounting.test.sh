@@ -51,5 +51,23 @@ run_driver opencode "$OPENCODE_PRESENT"
 jq -e '.usage.tokens == 9 and .usage.cached_input_tokens == null and .usage.token_state == "partial" and .usage.cost_state == "runtime_reported" and .usage.runtime_cost.source_field == "step_finish.part.cost"' "$OPENCODE_PRESENT/run/driver.json" >/dev/null 2>&1
 report "opencode present numeric telemetry has explicit runtime provenance and partial dimensions" $?
 
+CLAUDE_INVALID="$TMP/claude-invalid"
+mkdir -p "$CLAUDE_INVALID/bin"
+printf '%s\n' '#!/bin/sh' \
+  'echo "{\"type\":\"result\",\"usage\":{\"total_tokens\":-1,\"input_tokens\":7.5,\"cache_read_input_tokens\":2,\"output_tokens\":\"3\"},\"total_cost_usd\":1e999}"' > "$CLAUDE_INVALID/bin/claude"
+chmod +x "$CLAUDE_INVALID/bin/claude"
+run_driver claude "$CLAUDE_INVALID"
+jq -e '.usage.total_tokens == null and .usage.input_tokens == null and .usage.cached_input_tokens == 2 and .usage.output_tokens == null and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$CLAUDE_INVALID/run/driver.json" >/dev/null 2>&1
+report "claude rejects negative fractional and non-finite telemetry independently" $?
+
+OPENCODE_INVALID="$TMP/opencode-invalid"
+mkdir -p "$OPENCODE_INVALID/bin"
+printf '%s\n' '#!/bin/sh' \
+  'if [ "$1" = debug ]; then echo "{\"model\":\"provider/model\"}"; else echo "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"total\":4,\"input\":2,\"output\":2},\"cost\":0.25}}"; echo "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"total\":-1,\"input\":1.5,\"output\":1},\"cost\":1e999}}"; fi' > "$OPENCODE_INVALID/bin/opencode"
+chmod +x "$OPENCODE_INVALID/bin/opencode"
+run_driver opencode "$OPENCODE_INVALID"
+jq -e '.usage.total_tokens == null and .usage.input_tokens == null and .usage.output_tokens == 3 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$OPENCODE_INVALID/run/driver.json" >/dev/null 2>&1
+report "opencode validates every step before summing while retaining valid siblings" $?
+
 echo "runtime-accounting.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1
