@@ -68,7 +68,7 @@ fi
 
 EXPLICIT_ALL_DIR="$ROOT/evals/results/$STAMP-all-explicit"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --attempt-id logical-all --results-dir "$EXPLICIT_ALL_DIR" >/dev/null
-if jq -e --argjson n "$EXPECTED_TOTAL" '.total == $n and (.runs | length) == $n and ([.runs[] | .attempt_id == "logical-all"] | all) and ([.runs[] | [.invocation_id,.run_id] | @json] | unique | length) == $n and (.accounting.rollups.by_attempt | length) == 1 and .accounting.rollups.by_attempt["unknown/unknown/scenario/logical-all"].attempt_count == $n' "$EXPLICIT_ALL_DIR/summary.json" >/dev/null; then
+if jq -e --argjson n "$EXPECTED_TOTAL" '.total == $n and (.runs | length) == $n and ([.runs[] | .attempt_id == "logical-all"] | all) and ([.runs[] | [.invocation_id,.run_id] | @json] | unique | length) == $n and (.accounting.rollups.by_attempt | length) == 1 and .accounting.rollups.by_attempt["[\"unknown\",\"unknown\",\"scenario\",\"logical-all\"]"].attempt_count == $n' "$EXPLICIT_ALL_DIR/summary.json" >/dev/null; then
   PASS=$((PASS+1)); echo "PASS: explicit attempt ID groups all scenario runs without replay collisions"
 else
   FAIL=$((FAIL+1)); echo "FAIL: explicit attempt ID replay identity"
@@ -256,6 +256,62 @@ else
   FAIL=$((FAIL+1)); echo "FAIL: forbidden-path tamper not surfaced correctly in summary.json"
 fi
 rm -rf "$FORBIDDEN_ROOT"
+
+# Decision claims are end-to-end evidence-bound: a fake Codex writes final.md while
+# the real Codex driver and runner produce the hashed run record. A passing writer is
+# deliberately present for every reviewer assertion so the denominator can only become
+# one when the verifier's terminal decision is exactly READY.
+FAKE_CODEX_ROOT=$(mktemp -d /tmp/harness-fake-codex-decision.XXXXXX)
+mkdir -p "$FAKE_CODEX_ROOT/bin"
+cat > "$FAKE_CODEX_ROOT/bin/codex" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  echo fake-codex
+  exit 0
+fi
+"$HARNESS_ROOT/evals/drivers/mock.sh" >/dev/null 2>&1 || exit $?
+printf '%b' "${FAKE_FINAL:-}" > "$HARNESS_RUN_DIR/final.md"
+printf '%s\n' '{"type":"thread.started","thread_id":"fake-codex"}'
+printf '%s\n' '{"type":"turn.started"}'
+printf '%s\n' '{"type":"item.completed","item":{"id":"message","type":"agent_message"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}'
+printf '%s\n' '{"event":"session_start","trace":{"policy":"inject-context","outcome":0}}' >> "$HARNESS_TRACE_FILE"
+EOF
+chmod +x "$FAKE_CODEX_ROOT/bin/codex"
+
+run_fake_codex_decision() {
+  local final_text="$1" attempt_id="$2" role="$3" phase="$4" subject_id="$5" result_dir="$6"
+  FAKE_FINAL="$final_text" PATH="$FAKE_CODEX_ROOT/bin:$PATH" GIT_AUTHOR_DATE='2000-01-01T00:00:00Z' GIT_COMMITTER_DATE='2000-01-01T00:00:00Z' \
+    HARNESS_INVOCATION_ID="decision-${attempt_id}" bash "$ROOT/evals/run.sh" \
+      --runtime codex --scenario tdd-under-deadline --runs 1 --judge mock --program-id decision-program \
+      --issue-id AIO-709 --attempt-id "$attempt_id" --role "$role" --phase "$phase" \
+      --outcome-id decision-claim --subject-attempt-id "$subject_id" --results-dir "$result_dir" >/dev/null
+}
+
+DECISION_SUBJECT_DIR="$ROOT/evals/results/$STAMP-decision-subject"
+run_fake_codex_decision 'writer evidence\n' writer writer implementation '' "$DECISION_SUBJECT_DIR"
+DECISION_SUBJECT="$DECISION_SUBJECT_DIR/tdd-under-deadline-codex-1/run.json"
+decision_case() {
+  local name="$1" final_text="$2" result_dir="$ROOT/evals/results/$STAMP-decision-$1"
+  run_fake_codex_decision "$final_text" "review-$name" reviewer review writer "$result_dir"
+  local reviewer="$result_dir/tdd-under-deadline-codex-1/run.json"
+  local expected_decision="$3" expected_count="$4"
+  if jq -e --arg decision "$expected_decision" '.decision == $decision and ((.verified_outcome == null) == ($decision != "READY")) and (.outcome_claim_status == (if $decision == "READY" then "accepted" else "rejected" end))' "$reviewer" >/dev/null &&
+     python3 "$ROOT/evals/lib/accounting.py" --output "$result_dir/accounting.json" "$DECISION_SUBJECT" "$reviewer" >/dev/null &&
+     jq -e --argjson count "$expected_count" '.independently_verified_outcome_count == $count' "$result_dir/accounting.json" >/dev/null; then
+    PASS=$((PASS+1)); echo "PASS: fake Codex final decision $name is strictly bound to hashed evidence"
+  else
+    FAIL=$((FAIL+1)); echo "FAIL: fake Codex final decision $name is strictly bound to hashed evidence"
+  fi
+}
+
+decision_case no-go-prefix 'NO-GO: reviewer has concerns\n' unknown 0
+decision_case no-go 'VERDICT: NO-GO\n' NO-GO 0
+decision_case ready 'review complete\nVERDICT: READY\n' READY 1
+decision_case missing 'review complete\n' unknown 0
+decision_case duplicate 'VERDICT: READY\nVERDICT: READY\n' unknown 0
+decision_case conflicting 'VERDICT: READY\nVERDICT: NO-GO\n' unknown 0
+rm -rf "$FAKE_CODEX_ROOT"
 
 echo "runner.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

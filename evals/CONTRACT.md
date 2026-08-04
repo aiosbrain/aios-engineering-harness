@@ -34,6 +34,10 @@ record shapes:
   cached input and reasoning output are subsets, never additive dimensions. Token state
   is complete/partial/unknown without deriving a missing total. Costs are only
   `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
+  Runtime telemetry follows one JSON-safe boundary: each token dimension is a finite,
+  nonnegative safe integer no larger than 9007199254740991, and each runtime cost is a
+  finite, nonnegative number no larger than that magnitude. Invalid fields become null
+  independently, so valid sibling dimensions survive and state is recomputed.
   Runtime-reported values retain source semantics but never assert billed/actual spend;
   estimates and allocations require versioned, ISO-timestamped, recomputable formula
   inputs. Aggregation deduplicates attempts once before hierarchical attempt/phase/issue/
@@ -74,6 +78,8 @@ paths so `run.sh` doesn't need patching), writes its own `lib/install-harness.sh
 vendored from (a version marker file) so drift is visible and re-syncs are deliberate,
 never silent — see `aios-workspace/evals/README.md` for the concrete sync mechanism.
 
-During a staged sync, a consumer may receive `run.sh` before the two accounting core
-modules. In that narrow intermediate, `run.sh` preserves legacy execution and emits
-explicit `legacy_unknown` accounting; the next sync must add both modules.
+Workspace remains explicitly `legacy_unknown` until AIO-754 vendors both accounting
+modules after AIO-612. AIO-754 sits under AIO-681 and is blocked by AIO-612 while
+blocking AIO-710; until that unsettled final cut lands, do not claim Workspace's current
+sync includes detailed accounting. During that staged interval, `run.sh` preserves
+legacy execution and emits explicit `legacy_unknown` accounting.

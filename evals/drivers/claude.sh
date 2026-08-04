@@ -29,8 +29,8 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   ([.[] | select(.type == "result")] | last // {}) as $r | ($r.usage // {}) as $u |
-  def token: if type == "number" and isfinite and . >= 0 and floor == . then . else null end;
-  def cost: if type == "number" and isfinite and . >= 0 then . else null end;
+  def token: if type == "number" and isfinite and . >= 0 and floor == . and . <= 9007199254740991 then . else null end;
+  def cost: if type == "number" and isfinite and . >= 0 and . <= 9007199254740991 then . else null end;
   {tokens:($u.total_tokens | token),total_tokens:($u.total_tokens | token),
    input_tokens:($u.input_tokens | token),cached_input_tokens:($u.cache_read_input_tokens | token),
    cache_read_input_tokens:($u.cache_read_input_tokens | token),output_tokens:($u.output_tokens | token),

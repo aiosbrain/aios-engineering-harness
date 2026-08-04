@@ -56,6 +56,10 @@ five independent token dimensions are total, input, cached input, output, and re
 output. State is `complete` only when all five are reported, `partial` when any but not
 all are reported, and `unknown` when none are; legacy `usage_state` stays `reported`
 when any token dimension or a cost exists. No missing provider total is derived.
+Each token dimension must be a finite, nonnegative safe integer no larger than
+9007199254740991; runtime costs use the same finite, nonnegative JSON-safe magnitude.
+Invalid fields are null independently, preserving valid sibling telemetry and recomputing
+state.
 
 Costs are grouped by provenance and currency, never folded into an unlabeled total:
 `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
@@ -92,10 +96,11 @@ token subtotal 7,138,031 and zero historical outcomes because no source binds a
 role-separated READY decision. Contradictory exact replays or canonical outcome evidence
 fail closed.
 
-Consumers may receive `run.sh` and drivers before the later sync of
-`lib/accounting.py` and `lib/build_observations.py`. That intermediate state runs with
-explicit `accounting.state: legacy_unknown`; the later consumer sync must add both core
-modules before detailed accounting is available.
+Workspace remains explicitly `legacy_unknown` until AIO-754 vendors both
+`lib/accounting.py` and `lib/build_observations.py` after AIO-612. AIO-754 is under
+AIO-681, is blocked by AIO-612, and blocks AIO-710; until that unsettled final cut,
+do not claim the current Workspace sync includes detailed accounting. The intermediate
+state runs with explicit `accounting.state: legacy_unknown`.
 
 `hook-events.jsonl` preserves the raw adapter and fixture trace. `events.jsonl` keeps
 transcript-derived events in their original order while reconciling matching check

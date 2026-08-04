@@ -117,7 +117,7 @@ class TerminalAccountingTests(unittest.TestCase):
         self.assertEqual(complete["token_state"], "complete")
         self.assertEqual(complete["usage_state"], "reported")
 
-        for invalid in (-1, 1.5, float("inf"), float("nan"), True):
+        for invalid in (-1, 1.5, float("inf"), float("nan"), True, 9_007_199_254_740_992):
             self.assertIsNone(ACCOUNTING.normalize_usage({"tokens": invalid})["total_tokens"])
 
     def test_pricing_and_allocation_amounts_are_recomputable(self) -> None:
@@ -325,8 +325,8 @@ class TerminalAccountingTests(unittest.TestCase):
         verifier = {"program_id": "p", "issue_id": "AIO-709", "phase": "review", "attempt_id": "review", "invocation_id": "i2", "run_id": "r2", "role": "reviewer", "status": "pass", "exit_status": 0, "current_sha": sha, "reviewed_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence, "verified_outcome": {"outcome_id": "free-label", "verification_id": "review", "verifier_role": "reviewer", "subject_attempt_id": "writer", "terminal_status": "pass", "reviewed_sha": sha, "decision": "READY", "evidence": evidence}}
         aggregate = ACCOUNTING.aggregate_attempts([subject, verifier])
         self.assertEqual(aggregate["independently_verified_outcome_count"], 1)
-        self.assertEqual(aggregate["independently_verified_outcome_ids"], ["p/AIO-709/" + sha])
-        self.assertEqual(aggregate["rollups"]["by_attempt"]["p/AIO-709/review/review"]["independently_verified_outcome_count"], 1)
+        self.assertEqual(aggregate["independently_verified_outcome_ids"], ['["p","AIO-709","' + sha + '"]'])
+        self.assertEqual(aggregate["rollups"]["by_attempt"]['["p","AIO-709","review","review"]']["independently_verified_outcome_count"], 1)
         for mutation in (
             {"role": "writer"},
             {"verified_outcome": {**verifier["verified_outcome"], "verification_id": "other"}},
@@ -343,7 +343,48 @@ class TerminalAccountingTests(unittest.TestCase):
         aggregate = ACCOUNTING.aggregate_attempts([first, second, first])
         self.assertEqual(aggregate["attempt_count"], 2)
         self.assertEqual(aggregate["deduplicated_replays"], 1)
-        self.assertEqual(list(aggregate["rollups"]["by_attempt"]), ["p/AIO-709/scenario/explicit"])
+        self.assertEqual(list(aggregate["rollups"]["by_attempt"]), ['["p","AIO-709","scenario","explicit"]'])
+
+    def test_structural_ids_prevent_slash_tuple_collisions_and_isolate_issues(self) -> None:
+        sha = "a" * 40
+        evidence = [{"basename": name, "sha256": char * 64} for name, char in
+                    (("driver.json", "b"), ("observations.v1.summary.json", "c"), ("final.md", "d"))]
+        def pair(program_id: str, issue_id: str, subject_id: str) -> list[dict[str, object]]:
+            subject = {"program_id": program_id, "issue_id": issue_id, "phase": "implementation", "attempt_id": subject_id,
+                       "invocation_id": subject_id + "-i", "run_id": subject_id + "-r", "role": "writer", "status": "pass",
+                       "exit_status": 0, "current_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence}
+            verifier = {"program_id": program_id, "issue_id": issue_id, "phase": "review", "attempt_id": subject_id + "-review",
+                        "invocation_id": subject_id + "-review-i", "run_id": subject_id + "-review-r", "role": "reviewer", "status": "pass",
+                        "exit_status": 0, "current_sha": sha, "reviewed_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence,
+                        "verified_outcome": {"outcome_id": "label", "verification_id": subject_id + "-review", "verifier_role": "reviewer",
+                                             "subject_attempt_id": subject_id, "terminal_status": "pass", "reviewed_sha": sha, "decision": "READY", "evidence": evidence}}
+            return [subject, verifier]
+        aggregate = ACCOUNTING.aggregate_attempts(pair("p", "AIO/709", "one") + pair("p/AIO", "709", "two"))
+        self.assertEqual(aggregate["outcome_count"], 2)
+        self.assertEqual(set(aggregate["rollups"]["by_attempt"]), {
+            '["p","AIO/709","implementation","one"]', '["p","AIO/709","review","one-review"]',
+            '["p/AIO","709","implementation","two"]', '["p/AIO","709","review","two-review"]',
+        })
+        self.assertEqual(aggregate["rollups"]["by_issue"]["AIO/709"]["outcome_count"], 1)
+        self.assertEqual(aggregate["rollups"]["by_issue"]["709"]["outcome_count"], 1)
+
+    def test_ready_retries_share_one_outcome_but_subject_conflicts_fail_closed(self) -> None:
+        sha = "a" * 40
+        evidence = [{"basename": name, "sha256": char * 64} for name, char in
+                    (("driver.json", "b"), ("observations.v1.summary.json", "c"), ("final.md", "d"))]
+        subject = {"program_id": "p", "issue_id": "AIO-709", "phase": "implementation", "attempt_id": "writer", "invocation_id": "writer-i", "run_id": "writer-r", "role": "writer", "status": "pass", "exit_status": 0, "current_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": evidence}
+        def verifier(attempt_id: str, digest: str, subject_attempt_id: str = "writer") -> dict[str, object]:
+            retry_evidence = [{"basename": name, "sha256": (digest if name == "final.md" else char * 64)} for name, char in
+                              (("driver.json", "b"), ("observations.v1.summary.json", "c"), ("final.md", "d"))]
+            return {"program_id": "p", "issue_id": "AIO-709", "phase": "review", "attempt_id": attempt_id, "invocation_id": attempt_id + "-i", "run_id": attempt_id + "-r", "role": "reviewer", "status": "pass", "exit_status": 0, "current_sha": sha, "reviewed_sha": sha, "observation_verdict": "pass", "usage": {}, "source_artifacts": retry_evidence, "verified_outcome": {"outcome_id": "label", "verification_id": attempt_id, "verifier_role": "reviewer", "subject_attempt_id": subject_attempt_id, "terminal_status": "pass", "reviewed_sha": sha, "decision": "READY", "evidence": retry_evidence}}
+        retry = verifier("review-2", "e" * 64)
+        aggregate = ACCOUNTING.aggregate_attempts([subject, verifier("review-1", "d" * 64), retry])
+        self.assertEqual(aggregate["attempt_count"], 3)
+        self.assertEqual(aggregate["outcome_count"], 1)
+        conflicting_subject = verifier("review-3", "f" * 64, "other-writer")
+        other_subject = {**subject, "attempt_id": "other-writer", "invocation_id": "other-writer-i", "run_id": "other-writer-r"}
+        with self.assertRaisesRegex(ValueError, "conflicting verified outcome"):
+            ACCOUNTING.aggregate_attempts([subject, other_subject, verifier("review-1", "d" * 64), conflicting_subject])
 
 
 if __name__ == "__main__":

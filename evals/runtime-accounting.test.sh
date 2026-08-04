@@ -60,6 +60,15 @@ run_driver claude "$CLAUDE_INVALID"
 jq -e '.usage.total_tokens == null and .usage.input_tokens == null and .usage.cached_input_tokens == 2 and .usage.output_tokens == null and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$CLAUDE_INVALID/run/driver.json" >/dev/null 2>&1
 report "claude rejects negative fractional and non-finite telemetry independently" $?
 
+CLAUDE_OVERSIZED="$TMP/claude-oversized"
+mkdir -p "$CLAUDE_OVERSIZED/bin"
+printf '%s\n' '#!/bin/sh' \
+  'echo "{\"type\":\"result\",\"usage\":{\"total_tokens\":9007199254740992,\"input_tokens\":1},\"total_cost_usd\":9007199254740992}"' > "$CLAUDE_OVERSIZED/bin/claude"
+chmod +x "$CLAUDE_OVERSIZED/bin/claude"
+run_driver claude "$CLAUDE_OVERSIZED"
+jq -e '.usage.total_tokens == null and .usage.input_tokens == 1 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$CLAUDE_OVERSIZED/run/driver.json" >/dev/null 2>&1
+report "claude rejects oversized JSON-unsafe token and runtime cost fields independently" $?
+
 OPENCODE_INVALID="$TMP/opencode-invalid"
 mkdir -p "$OPENCODE_INVALID/bin"
 printf '%s\n' '#!/bin/sh' \
@@ -68,6 +77,24 @@ chmod +x "$OPENCODE_INVALID/bin/opencode"
 run_driver opencode "$OPENCODE_INVALID"
 jq -e '.usage.total_tokens == null and .usage.input_tokens == null and .usage.output_tokens == 3 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$OPENCODE_INVALID/run/driver.json" >/dev/null 2>&1
 report "opencode validates every step before summing while retaining valid siblings" $?
+
+OPENCODE_OVERSIZED="$TMP/opencode-oversized"
+mkdir -p "$OPENCODE_OVERSIZED/bin"
+printf '%s\n' '#!/bin/sh' \
+  'if [ "$1" = debug ]; then echo "{\"model\":\"provider/model\"}"; else echo "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"total\":9007199254740992,\"input\":1,\"output\":1},\"cost\":9007199254740992}}"; fi' > "$OPENCODE_OVERSIZED/bin/opencode"
+chmod +x "$OPENCODE_OVERSIZED/bin/opencode"
+run_driver opencode "$OPENCODE_OVERSIZED"
+jq -e '.usage.total_tokens == null and .usage.input_tokens == 1 and .usage.output_tokens == 1 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$OPENCODE_OVERSIZED/run/driver.json" >/dev/null 2>&1
+report "opencode rejects oversized operands while retaining valid siblings" $?
+
+OPENCODE_OVERFLOW="$TMP/opencode-overflow"
+mkdir -p "$OPENCODE_OVERFLOW/bin"
+printf '%s\n' '#!/bin/sh' \
+  'if [ "$1" = debug ]; then echo "{\"model\":\"provider/model\"}"; else echo "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"total\":9007199254740991,\"input\":1,\"output\":1},\"cost\":9007199254740991}}"; echo "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"total\":1,\"input\":1,\"output\":1},\"cost\":1}}"; fi' > "$OPENCODE_OVERFLOW/bin/opencode"
+chmod +x "$OPENCODE_OVERFLOW/bin/opencode"
+run_driver opencode "$OPENCODE_OVERFLOW"
+jq -e '.usage.total_tokens == null and .usage.input_tokens == 2 and .usage.output_tokens == 2 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$OPENCODE_OVERFLOW/run/driver.json" >/dev/null 2>&1
+report "opencode rejects JSON-unsafe post-sum overflow without poisoning valid siblings" $?
 
 echo "runtime-accounting.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

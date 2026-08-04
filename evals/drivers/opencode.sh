@@ -25,14 +25,14 @@ fi
 END=$(date +%s)
 USAGE=$(jq -s '
   [.[] | select(.type == "step_finish") | .part] as $steps |
-  def token: if type == "number" and isfinite and . >= 0 and floor == . then . else null end;
-  def cost: if type == "number" and isfinite and . >= 0 then . else null end;
+  def token: if type == "number" and isfinite and . >= 0 and floor == . and . <= 9007199254740991 then . else null end;
+  def cost: if type == "number" and isfinite and . >= 0 and . <= 9007199254740991 then . else null end;
   def sum_tokens(path):
     if ($steps | length) == 0 then null
-    else [$steps[] | (path | token)] as $values | if any($values[]; . == null) then null else ($values | add) end end;
+    else [$steps[] | (path | token)] as $values | if any($values[]; . == null) then null else ($values | add | token) end end;
   def sum_cost:
     if ($steps | length) == 0 then null
-    else [$steps[] | (.cost | cost)] as $values | if any($values[]; . == null) then null else ($values | add) end end;
+    else [$steps[] | (.cost | cost)] as $values | if any($values[]; . == null) then null else ($values | add | cost) end end;
   {tokens:sum_tokens(.tokens.total),total_tokens:sum_tokens(.tokens.total),input_tokens:sum_tokens(.tokens.input),
    cached_input_tokens:null,output_tokens:sum_tokens(.tokens.output),
    reasoning_output_tokens:sum_tokens(.tokens.reasoning),cost_usd:sum_cost} as $usage |
