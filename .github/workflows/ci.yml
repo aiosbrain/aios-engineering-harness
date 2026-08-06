@@ -58,6 +58,8 @@ jobs:
         run: bash evals/conformance.test.sh
       - name: codex-driver.test.sh
         run: bash evals/codex-driver.test.sh
+      - name: runtime-accounting.test.sh
+        run: bash evals/runtime-accounting.test.sh
       - name: inject-context.test.sh
         run: bash evals/inject-context.test.sh
       - name: route-skills.test.sh
@@ -68,6 +70,8 @@ jobs:
         run: python3 evals/evidence.test.py
       - name: observations.test.py
         run: python3 evals/observations.test.py
+      - name: accounting.test.py
+        run: python3 evals/accounting.test.py
 
   plugin-test:
     name: OpenCode plugin tests (bun, pinned)

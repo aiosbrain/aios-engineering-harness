@@ -38,11 +38,13 @@ bash evals/guards.test.sh
 bash evals/graders.test.sh
 bash evals/conformance.test.sh
 bash evals/codex-driver.test.sh
+bash evals/runtime-accounting.test.sh
 bash evals/inject-context.test.sh
 bash evals/route-skills.test.sh
 bash evals/stop-continuation.test.sh
 python3 evals/evidence.test.py
 python3 evals/observations.test.py
+python3 evals/accounting.test.py
 
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)
 bun test evals/opencode-plugin.test.ts
@@ -100,6 +102,10 @@ conformance-smoke) plus, for anything touching `hooks/` or `adapters/`, the rele
 > prevented, add the rule here (or promote it to a hook if it must be *guaranteed*).
 > Date each entry. Prune entries that graduate into hooks or formatters.
 
+- `2026-08-06` — a new `evals/*.test.{sh,py}` file is not a check until it is listed in
+  **both** `.github/workflows/ci.yml`'s `tests` job and the Commands block above. Adding
+  the test file alone leaves it passing locally and never run on a PR — silent zero
+  coverage. Wire the runner in the same commit that adds the test.
 - `2026-07-25` — a CI job that runs `bash evals/conformance.test.sh` also transitively
   needs Bun on `PATH` (it shells out to `bun test` for the OpenCode adapter suite) even
   when a separate job already covers the plugin tests directly — install Bun in both.
