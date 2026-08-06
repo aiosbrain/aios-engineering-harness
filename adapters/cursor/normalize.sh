@@ -25,6 +25,26 @@ printf '%s' "$INPUT" | jq -e 'type == "object"' >/dev/null 2>&1 || {
 CWD_DEFAULT=${CURSOR_PROJECT_DIR:-${PWD:-.}}
 
 case "$EVENT" in
+  pre_tool)
+    NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "$CWD_DEFAULT" '
+      (.tool_input // .arguments // {}) as $t |
+      (.tool_name // .name // .command_type // "unknown") as $name |
+      {
+        protocol_version:"1.2", event:"pre_tool", runtime:{name:"cursor"},
+        cwd:(.cwd // $cwd), session_id:(.conversation_id // .session_id // ""),
+        tool_name:$name, tool_id:(.tool_use_id // .call_id // ""),
+        operation:(if ($name | test("create|update|delete|archive|comment|assign|relation|set.state"; "i"))
+                   then "mutation"
+                   elif ($name | test("read|get|list|search|find"; "i")) then "read"
+                   elif ($name | test("bash|shell|exec|http|fetch"; "i")) then "execute"
+                   else "unknown" end),
+        tool_input:({
+          command:(.command // $t.command // $t.cmd), url:($t.url // $t.uri),
+          method:$t.method, server:(.server_name // .mcp_server // $t.server),
+          name:($t.name // $t.tool), operation_name:($t.operation_name // $t.operationName)
+        } | with_entries(select(.value | type == "string") | .value = .value[0:16384]))
+      }' 2>/dev/null) || exit 3
+    ;;
   pre_command)
     NORMALIZED=$(printf '%s' "$INPUT" | jq -c --arg cwd "$CWD_DEFAULT" '
       {

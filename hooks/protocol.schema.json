@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aiosbrain.dev/harness/hook-event/1.1/schema.json",
+  "$id": "https://aiosbrain.dev/harness/hook-event/1.2/schema.json",
   "title": "AIOS Harness normalized hook event",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol_version", "event", "runtime", "cwd"],
   "properties": {
-    "protocol_version": { "enum": ["1.0", "1.1"] },
+    "protocol_version": { "enum": ["1.0", "1.1", "1.2"] },
     "event": {
-      "enum": ["pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit"]
+      "enum": ["pre_edit", "pre_command", "pre_tool", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit"]
     },
     "runtime": {
       "type": "object",
@@ -51,6 +51,19 @@
       }
     },
     "command": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["read", "mutation", "execute", "unknown"] },
+    "tool_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string", "maxLength": 16384 },
+        "url": { "type": "string", "maxLength": 4096 },
+        "method": { "type": "string", "maxLength": 32 },
+        "server": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 256 },
+        "operation_name": { "type": "string", "maxLength": 256 }
+      }
+    },
     "prompt": { "type": "string" },
     "stop": {
       "type": "object",
@@ -87,6 +100,13 @@
     {
       "if": { "properties": { "event": { "const": "pre_command" } } },
       "then": { "required": ["command"] }
+    },
+    {
+      "if": { "properties": { "event": { "const": "pre_tool" } } },
+      "then": {
+        "required": ["tool_name", "operation", "tool_input"],
+        "properties": { "protocol_version": { "const": "1.2" } }
+      }
     },
     {
       "if": { "properties": { "event": { "const": "post_edit" } } },

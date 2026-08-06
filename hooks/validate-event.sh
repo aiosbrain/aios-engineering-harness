@@ -14,8 +14,8 @@ INPUT=$(cat 2>/dev/null || true)
 
 printf '%s' "$INPUT" | jq -e '
   type == "object" and
-  (.protocol_version | IN("1.0", "1.1")) and
-  (.event | IN("pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit")) and
+  (.protocol_version | IN("1.0", "1.1", "1.2")) and
+  (.event | IN("pre_edit", "pre_command", "pre_tool", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit")) and
   (.runtime | type == "object") and
   (.runtime.name | IN("claude", "codex", "opencode", "cursor", "mock")) and
   (.cwd | type == "string" and length > 0) and
@@ -28,6 +28,13 @@ printf '%s' "$INPUT" | jq -e '
        (.content | type == "string")))
    elif .event == "pre_command" then
      (.command | type == "string" and length > 0)
+   elif .event == "pre_tool" then
+     .protocol_version == "1.2" and
+     (.tool_name | type == "string" and length > 0) and
+     (.operation | IN("read", "mutation", "execute", "unknown")) and
+     (.tool_input | type == "object") and
+     ((.tool_input | keys_unsorted) - ["command", "url", "method", "server", "name", "operation_name"] | length == 0) and
+     (all(.tool_input[]; type == "string"))
    elif .event == "post_edit" then
      (.paths | type == "array" and length > 0) and
      all(.paths[]; (.path | type == "string" and length > 0) and

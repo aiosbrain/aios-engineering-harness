@@ -5,8 +5,8 @@ export type PathChange = {
 }
 
 export type NormalizedEvent = {
-  protocol_version: "1.0" | "1.1"
-  event: "pre_edit" | "pre_command" | "post_edit" | "stop" | "session_start" | "subagent_start" | "user_prompt_submit"
+  protocol_version: "1.0" | "1.1" | "1.2"
+  event: "pre_edit" | "pre_command" | "pre_tool" | "post_edit" | "stop" | "session_start" | "subagent_start" | "user_prompt_submit"
   runtime: { name: "opencode" }
   cwd: string
   session_id: string
@@ -15,6 +15,8 @@ export type NormalizedEvent = {
   paths?: PathChange[]
   added_content?: Array<{ path: string; content: string }>
   command?: string
+  operation?: "read" | "mutation" | "execute" | "unknown"
+  tool_input?: Record<string, string>
   stop?: {
     verification_loop_active: boolean
     stop_status?: "ok" | "failed" | "aborted" | "error"
@@ -62,6 +64,44 @@ function stringArg(args: Record<string, unknown>, ...names: string[]) {
     if (typeof args[name] === "string") return args[name] as string
   }
   return ""
+}
+
+function toolOperation(tool: string): "read" | "mutation" | "execute" | "unknown" {
+  if (/create|update|delete|archive|comment|assign|relation|set.state/i.test(tool)) return "mutation"
+  if (/read|get|list|search|find/i.test(tool)) return "read"
+  if (/bash|shell|exec|http|fetch/i.test(tool)) return "execute"
+  return "unknown"
+}
+
+export function normalizePreToolEvent(
+  input: ToolInput,
+  args: Record<string, unknown>,
+  cwd: string,
+): NormalizedEvent {
+  const fields: Record<string, string> = {}
+  const aliases: Array<[string, string[]]> = [
+    ["command", ["command", "cmd"]],
+    ["url", ["url", "uri"]],
+    ["method", ["method"]],
+    ["server", ["server", "serverName"]],
+    ["name", ["name", "tool"]],
+    ["operation_name", ["operation_name", "operationName"]],
+  ]
+  for (const [target, names] of aliases) {
+    const value = stringArg(args, ...names)
+    if (value) fields[target] = value.slice(0, 16384)
+  }
+  return {
+    protocol_version: "1.2",
+    event: "pre_tool",
+    runtime: { name: "opencode" },
+    cwd,
+    session_id: input.sessionID,
+    tool_name: input.tool,
+    tool_id: input.callID,
+    operation: toolOperation(input.tool),
+    tool_input: fields,
+  }
 }
 
 export function normalizeToolEvent(

@@ -4,9 +4,10 @@ The protocol is the boundary between runtime adapters and portable policy. Runti
 adapters normalize their native payloads to one JSON object on stdin; scripts in
 `hooks/` must not parse Claude Code, Codex, or OpenCode payloads directly.
 
-Protocol `1.1` adds three input events (`session_start`, `subagent_start`,
-`user_prompt_submit`) and a policy **output action envelope**. `1.0` events remain
-valid unchanged; all three new events require `protocol_version: "1.1"`.
+Protocol `1.2` adds the runtime-neutral `pre_tool` event. Protocol `1.1` added three
+input events (`session_start`, `subagent_start`, `user_prompt_submit`) and a policy
+**output action envelope**. Older events remain valid unchanged; `pre_tool` requires
+`protocol_version: "1.2"` and the three context events require `1.1` or later.
 
 Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and optional
 `session_id`, `tool_name`, and `tool_id`. Event fields are:
@@ -15,6 +16,7 @@ Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and option
 |---|---|
 | `pre_edit` | `paths[]`, `added_content[]` (content introduced by the edit only) |
 | `pre_command` | `command` |
+| `pre_tool` | `tool_name`, normalized `operation` (`read`, `mutation`, `execute`, or `unknown`), and sanitized `tool_input`. Only routing-relevant string fields are retained: `command`, `url`, `method`, `server`, `name`, and `operation_name`; values are bounded and credential-shaped fields are never copied. |
 | `post_edit` | `paths[]` |
 | `stop` | `stop.verification_loop_active`; optional normalized `stop.stop_status` (`ok`, `failed`, `aborted`, `error` — aborted/error stops are never continued) and `stop.loop_count` (EXACT continuations already taken — only runtimes with a real counter send it; the gate stops at `HARNESS_STOP_CAP`, default 1, and always re-verifies the check before claiming it is still red). A runtime that can only signal a binary continuation flag omits `loop_count` and is bounded at one continuation regardless of cap |
 | `session_start` | `session_start.phase` (`startup`, `resume`, or `compact`) |
@@ -28,6 +30,12 @@ is [`protocol.schema.json`](protocol.schema.json).
 Portable scripts have three outcomes: `0` allows, `2` is a policy block, and `3`
 means the event or local configuration could not be evaluated. Safety adapters map
 `3` to a native block. Post-edit formatting always maps failures to allow.
+
+The Linear routing guard consumes only `pre_tool`. It is active only when `cwd` is
+inside a canonical `guardScopes` entry in the user's AIOS XDG config. It permits the
+first-party `aios linear` route, rejects direct Linear API and generic CLI access,
+and rejects known Linear MCP mutations. It does not claim to constrain manual or
+browser actions outside supported agent tool hooks.
 
 ## Output action envelope (1.1)
 
