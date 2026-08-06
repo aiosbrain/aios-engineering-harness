@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { HarnessGuards } from "../adapters/opencode/plugin/harness"
-import { normalizeStopEvent, normalizeToolEvent } from "../adapters/opencode/normalize"
+import { normalizePreToolEvent, normalizeStopEvent, normalizeToolEvent } from "../adapters/opencode/normalize"
 
 const temporary: string[] = []
 afterEach(() => {
@@ -73,6 +73,17 @@ describe("OpenCode adapter normalization", () => {
     )
     expect(command.command).toBe("git status")
     expect(normalizeStopEvent("/work", "s1", true).stop?.verification_loop_active).toBe(true)
+  })
+
+  test("normalizes a sanitized protocol 1.2 pre-tool event", () => {
+    const event = normalizePreToolEvent(
+      { tool: "mcp__linear__create_issue", sessionID: "s1", callID: "c1" },
+      { name: "create_issue", apiKey: "must-not-leak" },
+      "/work",
+    )
+    expect(event.protocol_version).toBe("1.2")
+    expect(event.operation).toBe("mutation")
+    expect(event.tool_input).toEqual({ name: "create_issue" })
   })
 
   test("fails closed on malformed edits", () => {

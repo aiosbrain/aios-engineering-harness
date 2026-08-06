@@ -13,9 +13,14 @@ INPUT=$(cat 2>/dev/null || true)
 }
 
 printf '%s' "$INPUT" | jq -e '
+  # Minor bumps are additive, so events declare a minimum and compare rather than pin an
+  # exact string. Pinning equality would deny every gated call the moment a consumer ships
+  # an adapter one minor ahead of its vendored hooks.
+  def at_least($minimum):
+    (.protocol_version | split(".") | map(tonumber)) >= ($minimum | split(".") | map(tonumber));
   type == "object" and
-  (.protocol_version | IN("1.0", "1.1")) and
-  (.event | IN("pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit")) and
+  (.protocol_version | test("^1\\.(0|[1-9][0-9]*)$")) and
+  (.event | IN("pre_edit", "pre_command", "pre_tool", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit")) and
   (.runtime | type == "object") and
   (.runtime.name | IN("claude", "codex", "opencode", "cursor", "mock")) and
   (.cwd | type == "string" and length > 0) and
@@ -28,21 +33,28 @@ printf '%s' "$INPUT" | jq -e '
        (.content | type == "string")))
    elif .event == "pre_command" then
      (.command | type == "string" and length > 0)
+   elif .event == "pre_tool" then
+     at_least("1.2") and
+     (.tool_name | type == "string" and length > 0) and
+     (.operation | IN("read", "mutation", "execute", "unknown")) and
+     (.tool_input | type == "object") and
+     ((.tool_input | keys_unsorted) - ["command", "url", "method", "server", "name", "operation_name"] | length == 0) and
+     (all(.tool_input[]; type == "string"))
    elif .event == "post_edit" then
      (.paths | type == "array" and length > 0) and
      all(.paths[]; (.path | type == "string" and length > 0) and
        (.action | IN("add", "update", "delete", "rename", "unknown")))
    elif .event == "session_start" then
-     .protocol_version == "1.1" and
+     at_least("1.1") and
      (.session_start | type == "object") and
      (.session_start.phase | IN("startup", "resume", "compact"))
    elif .event == "subagent_start" then
-     .protocol_version == "1.1" and
+     at_least("1.1") and
      (.subagent_start | type == "object") and
      (.subagent_start.agent_type == null or (.subagent_start.agent_type | type == "string")) and
      (.subagent_start.agent_id == null or (.subagent_start.agent_id | type == "string"))
    elif .event == "user_prompt_submit" then
-     .protocol_version == "1.1" and
+     at_least("1.1") and
      (.prompt | type == "string")
    else
      (.stop | type == "object") and

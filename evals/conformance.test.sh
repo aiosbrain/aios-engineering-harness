@@ -174,6 +174,36 @@ HARNESS_TRACE_FILE="$TMP/results/../escaped.jsonl" pipe_status "trace traversal 
 ln -s "$TMP/escaped-link.jsonl" "$TMP/results/link.jsonl"
 HARNESS_TRACE_FILE="$TMP/results/link.jsonl" pipe_status "trace symlink blocks safety policy" 2 "$CLAUDE_SAFE_CMD" "$ADAPTER" claude-code pre_command guard-destructive.sh
 
+echo "Protocol 1.2 pre_tool"
+VALIDATE="$ROOT/hooks/validate-event.sh"
+pre_tool_event() {
+  jq -cn --arg version "$1" --argjson input "${2:-{\"command\":\"ls\"\}}" \
+    '{protocol_version:$version,event:"pre_tool",runtime:{name:"claude"},cwd:"/tmp",
+      tool_name:"Bash",operation:"execute",tool_input:$input}'
+}
+pipe_status "validate-event accepts a 1.2 pre_tool event" 0 "$(pre_tool_event 1.2)" "$VALIDATE"
+# The minimum is compared, not pinned: a consumer one minor ahead of its vendored hooks
+# must not have every gated tool call denied.
+pipe_status "validate-event accepts pre_tool on a later minor" 0 "$(pre_tool_event 1.3)" "$VALIDATE"
+pipe_status "validate-event rejects pre_tool below its minimum" 3 "$(pre_tool_event 1.1)" "$VALIDATE"
+pipe_status "validate-event rejects a major-version bump" 3 "$(pre_tool_event 2.0)" "$VALIDATE"
+pipe_status "validate-event rejects a non-allowlisted tool_input field" 3 \
+  "$(pre_tool_event 1.2 '{"api_key":"secret"}')" "$VALIDATE"
+CONTEXT_EVENT='{"event":"session_start","runtime":{"name":"claude"},"cwd":"/tmp","session_start":{"phase":"startup"}}'
+pipe_status "validate-event accepts a 1.1 context event on 1.2" 0 \
+  "$(jq -c '. + {protocol_version:"1.2"}' <<<"$CONTEXT_EVENT")" "$VALIDATE"
+pipe_status "validate-event still rejects a 1.1 context event on 1.0" 3 \
+  "$(jq -c '. + {protocol_version:"1.0"}' <<<"$CONTEXT_EVENT")" "$VALIDATE"
+
+CLAUDE_TOOL_CALL='{"cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"ls","api_key":"secret"}}'
+CLAUDE_PRE_TOOL=$(printf '%s' "$CLAUDE_TOOL_CALL" | "$ROOT/adapters/claude-code/normalize.sh" pre_tool)
+if printf '%s' "$CLAUDE_PRE_TOOL" | "$VALIDATE" >/dev/null 2>&1 &&
+   jq -e '.protocol_version == "1.2" and .operation == "execute" and .tool_input == {command:"ls"}' <<<"$CLAUDE_PRE_TOOL" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS (0): Claude pre_tool normalizes to a valid event and drops credential-shaped input"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: Claude pre_tool normalization"
+fi
+
 echo "OpenCode TypeScript adapter"
 check_status "OpenCode normalizer tests" 0 bun test "$ROOT/evals/opencode-plugin.test.ts"
 
