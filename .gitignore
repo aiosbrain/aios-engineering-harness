@@ -7,3 +7,4 @@ evals/results/
 evals/scratch/
 __pycache__/
 *.py[cod]
+.aios/

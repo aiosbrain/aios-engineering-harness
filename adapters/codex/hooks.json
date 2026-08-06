@@ -38,6 +38,16 @@
     ],
     "PreToolUse": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.harness/adapters/run-hook.sh\" codex pre_tool guard-linear-routing.sh",
+            "timeout": 30,
+            "statusMessage": "Enforcing the AIOS Linear route"
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write",
         "hooks": [
           {

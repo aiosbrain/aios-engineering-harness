@@ -6,14 +6,19 @@
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor session_start inject-context.sh", "timeout": 15 }
     ],
     "beforeShellExecution": [
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_tool guard-linear-routing.sh", "timeout": 30, "failClosed": true },
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command guard-destructive.sh", "timeout": 30, "failClosed": true },
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command guard-worktree.sh", "timeout": 30, "failClosed": true },
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_command outbound-comms-guard.sh", "timeout": 30, "failClosed": true }
     ],
     "preToolUse": [
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_tool guard-linear-routing.sh", "timeout": 30, "failClosed": true },
       { "matcher": "Write|Edit|MultiEdit", "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_edit guard-secrets.sh", "timeout": 30, "failClosed": true },
       { "matcher": "Write|Edit|MultiEdit", "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_edit guard-protected-paths.sh", "timeout": 30, "failClosed": true },
       { "matcher": "Write|Edit|MultiEdit", "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_edit guard-worktree.sh", "timeout": 30, "failClosed": true }
+    ],
+    "beforeMCPExecution": [
+      { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor pre_tool guard-linear-routing.sh", "timeout": 30, "failClosed": true }
     ],
     "afterFileEdit": [
       { "command": "/bin/sh \"${CURSOR_PROJECT_DIR}/.harness/adapters/run-hook.sh\" cursor post_edit post-edit-format.sh", "timeout": 120 }

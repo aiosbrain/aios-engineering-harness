@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import {
   normalizeSessionStartEvent,
+  normalizePreToolEvent,
   normalizeStopEvent,
   normalizeToolEvent,
   normalizeUserPromptEvent,
@@ -145,6 +146,7 @@ export const HarnessGuards: Plugin = async ({ client, directory, worktree }) => 
 
     "tool.execute.before": async (input, output) => {
       const tool = input.tool.toLowerCase()
+      enforce("guard-linear-routing.sh", normalizePreToolEvent({ ...input, tool }, output.args, directory))
       if (["write", "edit", "apply_patch", "patch"].includes(tool)) {
         let event: NormalizedEvent
         try {

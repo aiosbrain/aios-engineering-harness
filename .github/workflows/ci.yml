@@ -62,6 +62,8 @@ jobs:
         run: bash evals/inject-context.test.sh
       - name: route-skills.test.sh
         run: bash evals/route-skills.test.sh
+      - name: linear-routing.test.sh
+        run: bash evals/linear-routing.test.sh
       - name: stop-continuation.test.sh
         run: bash evals/stop-continuation.test.sh
       - name: evidence.test.py
