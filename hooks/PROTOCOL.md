@@ -4,9 +4,17 @@ The protocol is the boundary between runtime adapters and portable policy. Runti
 adapters normalize their native payloads to one JSON object on stdin; scripts in
 `hooks/` must not parse Claude Code, Codex, or OpenCode payloads directly.
 
-Protocol `1.1` adds three input events (`session_start`, `subagent_start`,
-`user_prompt_submit`) and a policy **output action envelope**. `1.0` events remain
-valid unchanged; all three new events require `protocol_version: "1.1"`.
+Protocol `1.2` adds the runtime-neutral `pre_tool` event. Protocol `1.1` added three
+input events (`session_start`, `subagent_start`, `user_prompt_submit`) and a policy
+**output action envelope**. Older events remain valid unchanged.
+
+Versions are `1.<minor>` and minor bumps are additive, so each event declares a
+**minimum** version and anything at or above it is accepted: `pre_tool` requires `1.2`
+or later, the three context events require `1.1` or later, and the original events
+accept any `1.x`. Both the schema and `validate-event.sh` compare versions, not string
+equality, so a consumer that ships a newer adapter than its vendored `hooks/` is not
+denied outright. A breaking change is a major bump, and `2.x` is rejected until this
+protocol is revised for it.
 
 Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and optional
 `session_id`, `tool_name`, and `tool_id`. Event fields are:
@@ -15,6 +23,7 @@ Common fields are `protocol_version`, `event`, `runtime.name`, `cwd`, and option
 |---|---|
 | `pre_edit` | `paths[]`, `added_content[]` (content introduced by the edit only) |
 | `pre_command` | `command` |
+| `pre_tool` | `tool_name`, normalized `operation` (`read`, `mutation`, `execute`, or `unknown`), and sanitized `tool_input`. Only routing-relevant string fields are retained: `command`, `url`, `method`, `server`, `name`, and `operation_name`; values are bounded and credential-shaped fields are never copied. |
 | `post_edit` | `paths[]` |
 | `stop` | `stop.verification_loop_active`; optional normalized `stop.stop_status` (`ok`, `failed`, `aborted`, `error` — aborted/error stops are never continued) and `stop.loop_count` (EXACT continuations already taken — only runtimes with a real counter send it; the gate stops at `HARNESS_STOP_CAP`, default 1, and always re-verifies the check before claiming it is still red). A runtime that can only signal a binary continuation flag omits `loop_count` and is bounded at one continuation regardless of cap |
 | `session_start` | `session_start.phase` (`startup`, `resume`, or `compact`) |

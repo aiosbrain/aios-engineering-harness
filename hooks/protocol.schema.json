@@ -1,14 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aiosbrain.dev/harness/hook-event/1.1/schema.json",
+  "$id": "https://aiosbrain.dev/harness/hook-event/1.2/schema.json",
   "title": "AIOS Harness normalized hook event",
   "type": "object",
   "additionalProperties": false,
   "required": ["protocol_version", "event", "runtime", "cwd"],
   "properties": {
-    "protocol_version": { "enum": ["1.0", "1.1"] },
+    "protocol_version": {
+      "$comment": "Minor bumps are additive, so any 1.x is accepted and each event declares a minimum below (expressed as 'not one of the versions beneath it'). A breaking change is a major bump and is rejected here until this schema is revised for it.",
+      "type": "string",
+      "pattern": "^1\\.(0|[1-9][0-9]*)$"
+    },
     "event": {
-      "enum": ["pre_edit", "pre_command", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit"]
+      "enum": ["pre_edit", "pre_command", "pre_tool", "post_edit", "stop", "session_start", "subagent_start", "user_prompt_submit"]
     },
     "runtime": {
       "type": "object",
@@ -51,6 +55,19 @@
       }
     },
     "command": { "type": "string", "minLength": 1 },
+    "operation": { "enum": ["read", "mutation", "execute", "unknown"] },
+    "tool_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string", "maxLength": 16384 },
+        "url": { "type": "string", "maxLength": 4096 },
+        "method": { "type": "string", "maxLength": 32 },
+        "server": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 256 },
+        "operation_name": { "type": "string", "maxLength": 256 }
+      }
+    },
     "prompt": { "type": "string" },
     "stop": {
       "type": "object",
@@ -89,6 +106,13 @@
       "then": { "required": ["command"] }
     },
     {
+      "if": { "properties": { "event": { "const": "pre_tool" } } },
+      "then": {
+        "required": ["tool_name", "operation", "tool_input"],
+        "properties": { "protocol_version": { "$ref": "#/$defs/atLeast1_2" } }
+      }
+    },
+    {
       "if": { "properties": { "event": { "const": "post_edit" } } },
       "then": { "required": ["paths"] }
     },
@@ -100,25 +124,33 @@
       "if": { "properties": { "event": { "const": "session_start" } } },
       "then": {
         "required": ["session_start"],
-        "properties": { "protocol_version": { "const": "1.1" } }
+        "properties": { "protocol_version": { "$ref": "#/$defs/atLeast1_1" } }
       }
     },
     {
       "if": { "properties": { "event": { "const": "subagent_start" } } },
       "then": {
         "required": ["subagent_start"],
-        "properties": { "protocol_version": { "const": "1.1" } }
+        "properties": { "protocol_version": { "$ref": "#/$defs/atLeast1_1" } }
       }
     },
     {
       "if": { "properties": { "event": { "const": "user_prompt_submit" } } },
       "then": {
         "required": ["prompt"],
-        "properties": { "protocol_version": { "const": "1.1" } }
+        "properties": { "protocol_version": { "$ref": "#/$defs/atLeast1_1" } }
       }
     }
   ],
   "$defs": {
+    "atLeast1_1": {
+      "$comment": "1.1 or later: any accepted version that is not one of the versions below 1.1.",
+      "not": { "enum": ["1.0"] }
+    },
+    "atLeast1_2": {
+      "$comment": "1.2 or later: any accepted version that is not one of the versions below 1.2.",
+      "not": { "enum": ["1.0", "1.1"] }
+    },
     "action": {
       "$comment": "Policy OUTPUT envelope (protocol 1.1): a context/continuation policy prints exactly one of these on stdout; adapters validate it (hooks/validate-action.sh) BEFORE translating to any runtime-native shape. Guard policies print nothing on stdout and keep exit-code semantics.",
       "type": "object",
