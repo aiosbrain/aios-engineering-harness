@@ -9,6 +9,7 @@ import json
 import re
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
 
@@ -326,7 +327,12 @@ class TerminalAccountingTests(unittest.TestCase):
         aggregate = ACCOUNTING.aggregate_attempts([subject, verifier])
         self.assertEqual(aggregate["independently_verified_outcome_count"], 1)
         self.assertEqual(aggregate["independently_verified_outcome_ids"], ['["p","AIO-709","' + sha + '"]'])
-        self.assertEqual(aggregate["rollups"]["by_attempt"]['["p","AIO-709","review","review"]']["independently_verified_outcome_count"], 1)
+        # The outcome belongs to the work that was verified, not to the review that
+        # verified it, so cost per outcome lands on the implementation attempt.
+        self.assertEqual(aggregate["rollups"]["by_attempt"]['["p","AIO-709","implementation","writer"]']["independently_verified_outcome_count"], 1)
+        self.assertEqual(aggregate["rollups"]["by_attempt"]['["p","AIO-709","review","review"]']["independently_verified_outcome_count"], 0)
+        self.assertEqual(aggregate["rollups"]["by_phase"]["implementation"]["outcome_count"], 1)
+        self.assertEqual(aggregate["rollups"]["by_phase"]["review"]["outcome_count"], 0)
         for mutation in (
             {"role": "writer"},
             {"verified_outcome": {**verifier["verified_outcome"], "verification_id": "other"}},
@@ -385,6 +391,136 @@ class TerminalAccountingTests(unittest.TestCase):
         other_subject = {**subject, "attempt_id": "other-writer", "invocation_id": "other-writer-i", "run_id": "other-writer-r"}
         with self.assertRaisesRegex(ValueError, "conflicting verified outcome"):
             ACCOUNTING.aggregate_attempts([subject, other_subject, verifier("review-1", "d" * 64), conflicting_subject])
+
+
+class AnthropicTokenModelTests(unittest.TestCase):
+    """Regression cover for the real recorded Claude usage block in evals/fixtures."""
+
+    FIXTURE = json.loads((ROOT / "evals/fixtures/accounting/claude-cache-usage.json").read_text())
+    # Illustrative per-token rates. Only the arithmetic identity matters to the contract.
+    RATES = {"total_tokens": 0, "input_tokens": 6e-06, "cached_input_tokens": 6e-07,
+             "cache_creation_input_tokens": 7.5e-06, "output_tokens": 2.25e-05,
+             "reasoning_output_tokens": 0}
+
+    def driver_usage(self) -> dict[str, object]:
+        """The usage block drivers/claude.sh emits for the recorded run."""
+        recorded = self.FIXTURE["result"]["usage"]
+        total = (recorded["input_tokens"] + recorded["cache_read_input_tokens"] +
+                 recorded["cache_creation_input_tokens"] + recorded["output_tokens"])
+        return {"tokens": total, "total_tokens": total, "input_tokens": recorded["input_tokens"],
+                "cached_input_tokens": recorded["cache_read_input_tokens"],
+                "cache_read_input_tokens": recorded["cache_read_input_tokens"],
+                "cache_creation_input_tokens": recorded["cache_creation_input_tokens"],
+                "output_tokens": recorded["output_tokens"], "reasoning_output_tokens": None,
+                "token_model": "disjoint_input_v1"}
+
+    def priced(self, counts: dict[str, object]) -> Decimal:
+        rates = {key: Decimal(str(value)) for key, value in self.RATES.items()}
+        return (Decimal(counts["input_tokens"]) * rates["input_tokens"] +
+                Decimal(counts["cached_input_tokens"]) * rates["cached_input_tokens"] +
+                Decimal(counts["cache_creation_input_tokens"]) * rates["cache_creation_input_tokens"] +
+                Decimal(counts["output_tokens"]) * rates["output_tokens"])
+
+    def test_recorded_cached_run_keeps_every_billed_dimension(self) -> None:
+        usage = ACCOUNTING.normalize_usage(self.driver_usage())
+        expected = self.FIXTURE["expected"]
+        self.assertEqual(usage["token_model"], "disjoint_input_v1")
+        self.assertEqual(usage["input_tokens"], 169)
+        self.assertEqual(usage["cached_input_tokens"], 471819)
+        self.assertEqual(usage["cache_creation_input_tokens"], 30685)
+        self.assertEqual(usage["output_tokens"], 5957)
+        self.assertEqual(usage["total_tokens"], expected["total_tokens"])
+        # Cache creation is disjoint from the other input dimensions, so dropping it is a
+        # silent undercount rather than an "unknown".
+        self.assertNotEqual(expected["total_tokens"], expected["subset_model_undercount"])
+        self.assertEqual(expected["total_tokens"] - expected["subset_model_undercount"],
+                         usage["cache_creation_input_tokens"])
+        self.assertEqual(usage["token_state"], "partial")
+
+    def test_recorded_cached_run_prices_under_the_disjoint_model(self) -> None:
+        counts = {key: self.driver_usage()[key] for key in ACCOUNTING.TOKEN_KEYS if key != "reasoning_output_tokens"}
+        counts["reasoning_output_tokens"] = 0
+        amount = self.priced(counts)
+        record = {**self.driver_usage(), "cost_amount": amount, "cost_currency": "USD",
+                  "cost_provenance": "pricing_estimate",
+                  "pricing": {"catalog_version": "2026-08-01", "model": self.FIXTURE["result"]["model"],
+                              "service_tier": self.FIXTURE["result"]["usage"]["service_tier"],
+                              "currency": "USD", "timestamp": "2026-08-04T01:56:53Z",
+                              "formula_method": "token_rate_v1",
+                              "inputs": {"token_counts": counts, "rates_per_token": self.RATES}}}
+        priced = ACCOUNTING.normalize_usage(record)
+        self.assertEqual(priced["cost_state"], "pricing_estimate")
+        self.assertEqual(priced["pricing"]["token_model"], "disjoint_input_v1")
+        self.assertEqual(priced["pricing"]["inputs"]["token_counts"]["cache_creation_input_tokens"], 30685)
+        self.assertIsNone(priced["unclassified_runtime_cost"])
+
+        # The same counts under the subset model are contradictory (cached > input) and
+        # must not price; and the disjoint model must not accept counts that omit a
+        # billed dimension.
+        mislabelled = {**record, "token_model": "subset_input_v1"}
+        self.assertEqual(ACCOUNTING.normalize_usage(mislabelled)["cost_state"], "unknown")
+        without_creation = {**record, "pricing": {**record["pricing"], "inputs": {
+            "token_counts": {key: value for key, value in counts.items() if key != "cache_creation_input_tokens"},
+            "rates_per_token": {key: value for key, value in self.RATES.items() if key != "cache_creation_input_tokens"}}}}
+        self.assertEqual(ACCOUNTING.normalize_usage(without_creation)["cost_state"], "unknown")
+
+    def test_declared_model_governs_completeness_and_unknown_models_fail_closed(self) -> None:
+        subset = ACCOUNTING.normalize_usage({"total_tokens": 12, "input_tokens": 8, "cached_input_tokens": 4,
+                                             "output_tokens": 4, "reasoning_output_tokens": 2,
+                                             "token_model": "subset_input_v1"})
+        self.assertEqual(subset["token_state"], "complete")
+        self.assertIsNone(subset["cache_creation_input_tokens"])
+        # A subset record carrying a dimension its model does not describe is not complete.
+        self.assertEqual(ACCOUNTING.normalize_usage({**{key: 1 for key in ACCOUNTING.TOKEN_KEYS},
+                                                     "token_model": "subset_input_v1"})["token_state"], "partial")
+        disjoint = ACCOUNTING.normalize_usage({**{key: 1 for key in ACCOUNTING.TOKEN_KEYS},
+                                               "token_model": "disjoint_input_v1"})
+        self.assertEqual(disjoint["token_state"], "complete")
+
+        unknown_model = {"input_tokens": 1, "output_tokens": 1, "token_model": "disjoint_input_v9",
+                         "cost_amount": 1, "cost_currency": "USD", "cost_provenance": "pricing_estimate",
+                         "pricing": {"catalog_version": "v", "model": "m", "service_tier": "standard",
+                                     "currency": "USD", "timestamp": "2026-08-04T00:00:00Z",
+                                     "formula_method": "token_rate_v1",
+                                     "inputs": {"token_counts": {}, "rates_per_token": {}}}}
+        normalized = ACCOUNTING.normalize_usage(unknown_model)
+        self.assertEqual(normalized["token_state"], "partial")
+        self.assertEqual(normalized["cost_state"], "unknown")
+
+    def test_cache_creation_survives_aggregation_and_stays_unknown_for_other_runtimes(self) -> None:
+        claude = {"program_id": "p", "issue_id": "AIO-709", "phase": "implementation", "attempt_id": "claude-1",
+                  "invocation_id": "i1", "run_id": "r1", "role": "writer", "runtime": "claude",
+                  "usage": self.driver_usage()}
+        second = {**claude, "attempt_id": "claude-2", "invocation_id": "i2", "run_id": "r2"}
+        tokens = ACCOUNTING.aggregate_attempts([claude, second])["tokens"]
+        self.assertEqual(tokens["cache_creation_input_tokens"], 61370)
+        self.assertEqual(tokens["total_tokens"], 2 * self.FIXTURE["expected"]["total_tokens"])
+        self.assertEqual(tokens["cache_creation_input_tokens_unknown_attempts"], 0)
+
+        codex = {**claude, "attempt_id": "codex-1", "invocation_id": "i3", "run_id": "r3", "runtime": "codex",
+                 "usage": {"total_tokens": 125, "input_tokens": 100, "cached_input_tokens": 80,
+                           "output_tokens": 25, "reasoning_output_tokens": 15, "token_model": "subset_input_v1"}}
+        mixed = ACCOUNTING.aggregate_attempts([claude, second, codex])["tokens"]
+        # A runtime that cannot report the dimension is unknown, never zero.
+        self.assertIsNone(mixed["cache_creation_input_tokens"])
+        self.assertEqual(mixed["known_cache_creation_input_tokens"], 61370)
+        self.assertEqual(mixed["cache_creation_input_tokens_unknown_attempts"], 1)
+
+    def test_self_verification_under_one_attempt_id_is_not_independent(self) -> None:
+        sha = "a" * 40
+        evidence = [{"basename": name, "sha256": char * 64} for name, char in
+                    (("driver.json", "b"), ("observations.v1.summary.json", "c"), ("final.md", "d"))]
+        shared = {"program_id": "p", "issue_id": "AIO-709", "attempt_id": "one-attempt", "status": "pass",
+                  "exit_status": 0, "current_sha": sha, "observation_verdict": "pass", "usage": {},
+                  "source_artifacts": evidence}
+        writer = {**shared, "phase": "implementation", "invocation_id": "i1", "run_id": "r1", "role": "writer"}
+        reviewer = {**shared, "phase": "review", "invocation_id": "i2", "run_id": "r2", "role": "reviewer",
+                    "reviewed_sha": sha,
+                    "verified_outcome": {"outcome_id": "label", "verification_id": "one-attempt",
+                                         "verifier_role": "reviewer", "subject_attempt_id": "one-attempt",
+                                         "terminal_status": "pass", "reviewed_sha": sha, "decision": "READY",
+                                         "evidence": evidence}}
+        self.assertEqual(ACCOUNTING.aggregate_attempts([writer, reviewer])["outcome_count"], 0)
 
 
 if __name__ == "__main__":

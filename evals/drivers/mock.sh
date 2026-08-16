@@ -7,11 +7,11 @@ TRANSCRIPT="$HARNESS_RUN_DIR/transcript.txt"
 
 case "$MODE" in
   unavailable)
-    jq -n '{runtime:"mock",model:"deterministic",exit_status:127,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
+    jq -n '{runtime:"mock",model:"deterministic",exit_status:127,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
     exit 127
     ;;
   timeout)
-    jq -n '{runtime:"mock",model:"deterministic",exit_status:124,duration_ms:10,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
+    jq -n '{runtime:"mock",model:"deterministic",exit_status:124,duration_ms:10,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
     exit 124
     ;;
   malformed)
@@ -20,13 +20,13 @@ case "$MODE" in
     ;;
   failure)
     printf 'Mock runtime failed before editing.\n' > "$TRANSCRIPT"
-    jq -n --arg t "$TRANSCRIPT" '{runtime:"mock",model:"deterministic",exit_status:1,duration_ms:1,transcript:$t,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
+    jq -n --arg t "$TRANSCRIPT" '{runtime:"mock",model:"deterministic",exit_status:1,duration_ms:1,transcript:$t,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
     exit 1
     ;;
   success) ;;
   *)
     echo "mock.sh: unrecognized HARNESS_MOCK_MODE '$MODE'" >&2
-    jq -n '{runtime:"mock",model:"deterministic",exit_status:2,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
+    jq -n '{runtime:"mock",model:"deterministic",exit_status:2,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' > "$HARNESS_DRIVER_RECORD"
     exit 2
     ;;
 esac
@@ -92,6 +92,6 @@ esac
 
 END=$(date +%s)
 jq -n --arg t "$TRANSCRIPT" --argjson status "$STATUS" --argjson duration "$(( (END-START)*1000 ))" \
-  '{runtime:"mock",model:"deterministic",exit_status:$status,duration_ms:$duration,transcript:$t,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' \
+  '{runtime:"mock",model:"deterministic",exit_status:$status,duration_ms:$duration,transcript:$t,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"}}' \
   > "$HARNESS_DRIVER_RECORD"
 exit "$STATUS"

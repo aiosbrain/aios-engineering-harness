@@ -88,15 +88,18 @@ else
 fi
 
 END=$(date +%s)
+# OpenAI reports the whole prompt in `input_tokens` with `cached_input_tokens` as a subset
+# of it, and bills nothing for cache writes, so there is no cache-creation dimension here.
 USAGE=$(jq -s '
   ([.[] | select(.type == "turn.completed") | .usage] | last // {}) as $u |
   def safe_integer: if type == "number" and isfinite and . >= 0 and floor == . and . <= 9007199254740991 then . else null end;
   {tokens:($u.total_tokens | safe_integer),total_tokens:($u.total_tokens | safe_integer),
    input_tokens:($u.input_tokens | safe_integer),cached_input_tokens:($u.cached_input_tokens | safe_integer),
-   output_tokens:($u.output_tokens | safe_integer),reasoning_output_tokens:($u.reasoning_output_tokens | safe_integer),cost_usd:null} as $usage |
+   output_tokens:($u.output_tokens | safe_integer),reasoning_output_tokens:($u.reasoning_output_tokens | safe_integer),
+   token_model:"subset_input_v1",cost_usd:null} as $usage |
   $usage + {token_state:(if ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | all(.[]; type == "number")) then "complete" elif ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | any(.[]; type == "number")) then "partial" else "unknown" end),
              cost_state:"unknown",cost_provenance:"unknown"}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown"}')
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_model":"subset_input_v1","token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown"}')
 jq -n --arg runtime codex --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg harness_sha "$(git -C "$HARNESS_ROOT" rev-parse HEAD 2>/dev/null || printf '%s' unknown)" \
   --arg reasoning "$REASONING" --arg cli_version "${CLI_VERSION:-unknown}" \

@@ -135,7 +135,8 @@ def build_observations(
             emit("turn.completed", "pass", transcript_ref, "info", "unknown",
                  turn_id=terminal_turn,
                  summary={"usage": {key: usage.get(key) if isinstance(usage.get(key), (int, float)) else None
-                                    for key in ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")}})
+                                    for key in ("input_tokens", "cached_input_tokens", "cache_creation_input_tokens",
+                                                "output_tokens", "reasoning_output_tokens")}})
             continue
         if kind not in {"item.started", "item.completed"}:
             continue

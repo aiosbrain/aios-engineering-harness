@@ -30,9 +30,19 @@ record shapes:
 - `lib/normalize_transcript.py` — runtime-specific transcript → generic `events.jsonl`.
 - `lib/build_observations.py`, `lib/accounting.py` — sanitized lifecycle, attribution,
   Git binding, completeness, and backward-compatible `observations.v1` accounting.
-  Accounting keeps total/input/cached-input/output/reasoning-output dimensions separate;
-  cached input and reasoning output are subsets, never additive dimensions. Token state
-  is complete/partial/unknown without deriving a missing total. Costs are only
+  Accounting keeps total/input/cached-input/cache-creation-input/output/reasoning-output
+  dimensions separate. How the prompt dimensions relate is provider-specific, so every
+  driver record declares it in `usage.token_model` and accounting never assumes one:
+  under `subset_input_v1` (OpenAI/Codex) `input_tokens` is the whole prompt and cached
+  input is a subset of it, with no billed cache-creation dimension; under
+  `disjoint_input_v1` (Anthropic/Claude) `input_tokens` is the uncached remainder only
+  and cache read and cache creation are separate billed dimensions beside it, so the
+  three sum to the prompt. Reasoning output is a subset of output under both.
+  Pricing prices only the disjoint portions of the declared model, refuses a dimension
+  that model does not price, and rejects an unrecognized model outright. Token state is
+  complete/partial/unknown against the dimensions the declared model actually models, and
+  accounting never derives a missing total — only a driver whose model makes the total
+  arithmetically determined (the disjoint sum) may report one it did not receive. Costs are only
   `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
   Runtime telemetry follows one JSON-safe boundary: each token dimension is a finite,
   nonnegative safe integer no larger than 9007199254740991, and each runtime cost is a

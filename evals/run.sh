@@ -48,9 +48,37 @@ fingerprint_forbidden() {
   done
 }
 
+UNKNOWN_USAGE='{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"cache_read_input_tokens":null,"cache_creation_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"token_model":"subset_input_v1","token_state":"unknown","usage_state":"unknown","cost_usd":null,"cost_amount":null,"cost_currency":null,"cost_state":"unknown","cost_provenance":"unknown","pricing":null,"allocation":null,"runtime_cost":null,"unclassified_runtime_cost":null}'
+
+# A run can fail after the driver already reported real telemetry (e.g. the observation
+# build fails on a 500k-token run). Booking that as all-null would erase spend that was
+# genuinely incurred, so reuse the driver's own usage whenever it exists and parses.
+early_usage() {
+  if [ -n "${DRIVER_RECORD:-}" ] && [ -f "${DRIVER_RECORD:-}" ] && [ -f "$ROOT/evals/lib/accounting.py" ]; then
+    NORMALIZED=$(python3 - "$ROOT/evals/lib/accounting.py" "$DRIVER_RECORD" <<'PY'
+import importlib.util
+import json
+import sys
+
+spec = importlib.util.spec_from_file_location("accounting", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+try:
+    record = json.loads(open(sys.argv[2], encoding="utf-8").read())
+except (OSError, ValueError):
+    raise SystemExit(1)
+usage = record.get("usage") if isinstance(record, dict) else None
+print(json.dumps(module.normalize_usage(usage), separators=(",", ":"), allow_nan=False))
+PY
+    ) && [ -n "$NORMALIZED" ] && { printf '%s' "$NORMALIZED"; return 0; }
+  fi
+  printf '%s' "$UNKNOWN_USAGE"
+}
+
 write_early_failure() {
   ATTRIBUTION=$1
   REASON=$2
+  EARLY_USAGE=$(early_usage)
   EMPTY_HASH=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
   EARLY_SHA=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || printf '%s' unknown)
   jq -nc --arg id "$RUN_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" \
@@ -62,15 +90,15 @@ write_early_failure() {
       frozen_sha:$sha,current_sha:$sha,diff_hash:$diff_hash,event:"phase.gate",status:"error",
       source_artifact:"runner",severity:"error",attribution:$attribution,summary:{reason:$reason}}' \
     > "$OBSERVATIONS"
-  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" \
+  jq -n --arg id "$RUN_ID" --arg attribution "$ATTRIBUTION" --arg reason "$REASON" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --argjson usage "$EARLY_USAGE" \
     '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,verdict:"error",effective_status:"error",
-      observation_count:1,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
+      observation_count:1,usage_state:$usage.usage_state,accounting:$usage,issues:[{severity:"error",attribution:$attribution,summary:$reason}]}' \
     > "$OBSERVATION_SUMMARY"
   jq -n --arg id "$RUN_ID" --arg scenario "$SCENARIO_ID" --arg runtime "$RUNTIME" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg current_sha "$EARLY_SHA" \
-    --arg model "$MODEL" --arg reason "$REASON" --arg observations "$OBSERVATIONS" \
+    --arg model "$MODEL" --arg reason "$REASON" --arg observations "$OBSERVATIONS" --argjson usage "$EARLY_USAGE" \
     --arg observation_summary "$OBSERVATION_SUMMARY" --slurpfile completeness "$OBSERVATION_SUMMARY" \
     '{schema_version:"1.0",run_id:$id,scenario:$scenario,runtime:$runtime,model:$model,
-      status:"error",exit_status:null,current_sha:$current_sha,reviewed_sha:"unknown",observation_verdict:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,role:$role,verified_outcome:null,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},
+      status:"error",exit_status:null,current_sha:$current_sha,reviewed_sha:"unknown",observation_verdict:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,role:$role,verified_outcome:null,usage:$usage,
       artifacts:{observations:$observations,observation_summary:$observation_summary},
       observation_completeness:$completeness[0]}' > "$RUN_RECORD"
 }
@@ -212,7 +240,7 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
 
     if ! jq -e 'type == "object" and (.runtime | type == "string")' "$DRIVER_RECORD" >/dev/null 2>&1; then
       jq -n --arg runtime "$RUNTIME" --argjson exit_status "$DRIVER_STATUS" \
-        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},malformed:true}' > "$DRIVER_RECORD"
+        '{runtime:$runtime,model:"unknown",exit_status:$exit_status,duration_ms:0,usage:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,cache_creation_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,cost_usd:null,token_state:"unknown",cost_state:"unknown",cost_provenance:"unknown"},malformed:true}' > "$DRIVER_RECORD"
     fi
 
     SEMANTIC_REQUIRED=$(jq -r '.semantic_required' "$SCENARIO_DIR/manifest.json")
@@ -261,7 +289,8 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
       # Keep its legacy run/status behavior and make the missing accounting explicit.
       jq -n --arg id "$RUN_ID" --arg program_id "$PROGRAM_ID" --arg issue_id "$ISSUE_ID" --arg phase "$PHASE" --arg role "$ROLE" \
         --arg invocation_id "$INVOCATION_ID" --arg attempt_id "$RUN_ATTEMPT_ID" --arg status "$STATUS" \
-        '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,verdict:"unknown",effective_status:$status,observation_count:0,usage_state:"unknown",accounting:{tokens:null,total_tokens:null,input_tokens:null,cached_input_tokens:null,output_tokens:null,reasoning_output_tokens:null,token_state:"unknown",usage_state:"unknown",cost_usd:null,cost_amount:null,cost_currency:null,cost_state:"unknown",cost_provenance:"unknown",pricing:null,allocation:null,runtime_cost:null,unclassified_runtime_cost:null},issues:[{severity:"warning",attribution:"harness",summary:"accounting core modules absent; consumer sync required"}]}' \
+        --argjson usage "$UNKNOWN_USAGE" \
+        '{schema_version:"observations.v1",program_id:$program_id,issue_id:$issue_id,phase:$phase,role:$role,invocation_id:$invocation_id,attempt_id:$attempt_id,run_id:$id,verdict:"unknown",effective_status:$status,observation_count:0,usage_state:"unknown",accounting:$usage,issues:[{severity:"warning",attribution:"harness",summary:"accounting core modules absent; consumer sync required"}]}' \
         > "$OBSERVATION_SUMMARY"
       : > "$OBSERVATIONS"
     else

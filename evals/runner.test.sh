@@ -166,6 +166,39 @@ else
 fi
 rm -rf "$BUILDER_ROOT"
 
+# A late failure must not erase telemetry the driver already reported. Numbers mirror
+# evals/fixtures/accounting/claude-cache-usage.json (a real 500k-token cached run).
+RETAINED_ROOT=$(mktemp -d /tmp/harness-early-failure-usage.XXXXXX)
+mkdir -p "$RETAINED_ROOT/evals/lib" "$RETAINED_ROOT/evals/drivers" "$RETAINED_ROOT/evals/scenarios"
+cp "$ROOT/evals/run.sh" "$RETAINED_ROOT/evals/run.sh"
+cp "$ROOT/evals/lib/accounting.py" "$RETAINED_ROOT/evals/lib/accounting.py"
+cp "$ROOT/evals/lib/normalize_transcript.py" "$RETAINED_ROOT/evals/lib/normalize_transcript.py"
+printf '#!/usr/bin/env python3\nraise SystemExit(1)\n' > "$RETAINED_ROOT/evals/lib/build_observations.py"
+printf '#!/bin/sh\nexit 0\n' > "$RETAINED_ROOT/evals/lib/install-harness.sh"
+chmod +x "$RETAINED_ROOT/evals/lib/install-harness.sh"
+cat > "$RETAINED_ROOT/evals/drivers/mock.sh" <<'DRIVER'
+#!/bin/sh
+jq -n '{runtime:"mock",model:"deterministic",exit_status:0,duration_ms:1,
+        usage:{tokens:508630,total_tokens:508630,input_tokens:169,cached_input_tokens:471819,
+               cache_read_input_tokens:471819,cache_creation_input_tokens:30685,output_tokens:5957,
+               reasoning_output_tokens:null,token_model:"disjoint_input_v1",cost_usd:0.57746075,
+               cost_state:"runtime_reported",cost_provenance:"runtime_reported",
+               runtime_cost:{source_field:"result.total_cost_usd",semantics:"runtime_reported_not_billed_or_actual"}}}' \
+  > "$HARNESS_DRIVER_RECORD"
+DRIVER
+chmod +x "$RETAINED_ROOT/evals/drivers/mock.sh"
+cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$RETAINED_ROOT/evals/scenarios/tdd-under-deadline"
+RETAINED_RESULTS="$RETAINED_ROOT/results"
+bash "$RETAINED_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
+  --results-dir "$RETAINED_RESULTS" >/dev/null 2>&1
+if jq -e '(.status == "error") and (.usage.total_tokens == 508630) and (.usage.cache_creation_input_tokens == 30685) and (.usage.cost_state == "runtime_reported") and (.usage.cost_usd == 0.57746075)' "$RETAINED_RESULTS/tdd-under-deadline-mock-1/run.json" >/dev/null &&
+   jq -e '(.accounting.total_tokens == 508630) and (.usage_state == "reported")' "$RETAINED_RESULTS/tdd-under-deadline-mock-1/observations.v1.summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: a failure after the driver ran retains the reported usage instead of booking zero"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: early-failure fallback discards reported usage"
+fi
+rm -rf "$RETAINED_ROOT"
+
 EMPTY_ROOT=$(mktemp -d /tmp/harness-empty-scenarios.XXXXXX)
 mkdir -p "$EMPTY_ROOT/evals/lib" "$EMPTY_ROOT/evals/drivers" "$EMPTY_ROOT/evals/scenarios"
 cp "$ROOT/evals/run.sh" "$EMPTY_ROOT/evals/run.sh"

@@ -14,7 +14,26 @@ from typing import Any
 
 
 COST_PROVENANCES = {"runtime_reported", "pricing_estimate", "allocated_subscription", "unknown"}
-TOKEN_KEYS = ("total_tokens", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
+TOKEN_KEYS = ("total_tokens", "input_tokens", "cached_input_tokens", "cache_creation_input_tokens",
+              "output_tokens", "reasoning_output_tokens")
+# Providers disagree about how the prompt dimensions relate, so the relation is declared
+# per record (`usage.token_model`) instead of assumed globally:
+#
+#   subset_input_v1   - `input_tokens` is the whole prompt and `cached_input_tokens` is a
+#                       subset of it (OpenAI/Codex). Cache writes are not a billed
+#                       dimension, so `cache_creation_input_tokens` is not modeled.
+#   disjoint_input_v1 - `input_tokens` (uncached remainder), `cached_input_tokens`
+#                       (cache read) and `cache_creation_input_tokens` (cache write) are
+#                       mutually disjoint and sum, with output, to the total (Anthropic).
+#
+# `reasoning_output_tokens` is a subset of `output_tokens` under both models. An
+# unrecognized model is never treated as either one: its telemetry stays `partial` and a
+# pricing estimate built on it is rejected.
+TOKEN_MODELS = {
+    "subset_input_v1": ("total_tokens", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"),
+    "disjoint_input_v1": TOKEN_KEYS,
+}
+DEFAULT_TOKEN_MODEL = "subset_input_v1"
 IDENTITY_KEYS = ("program_id", "issue_id", "phase", "attempt_id", "invocation_id", "run_id")
 LOGICAL_ATTEMPT_KEYS = ("program_id", "issue_id", "phase", "attempt_id")
 SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
@@ -79,17 +98,57 @@ def token_dimensions(raw: dict[str, Any]) -> dict[str, int | None]:
         "total_tokens": token(raw.get("total_tokens", raw.get("tokens"))),
         "input_tokens": token(raw.get("input_tokens")),
         "cached_input_tokens": token(cached),
+        "cache_creation_input_tokens": token(raw.get("cache_creation_input_tokens")),
         "output_tokens": token(raw.get("output_tokens")),
         "reasoning_output_tokens": token(raw.get("reasoning_output_tokens")),
     }
 
 
-def token_state(dimensions: dict[str, int | None]) -> str:
-    present = sum(value is not None for value in dimensions.values())
-    return "unknown" if present == 0 else ("complete" if present == len(TOKEN_KEYS) else "partial")
+def declared_token_model(raw: dict[str, Any]) -> str:
+    """Return the record's declared token model verbatim, defaulting to the subset model."""
+    return text(raw.get("token_model")) or DEFAULT_TOKEN_MODEL
 
 
-def pricing_provenance(raw: Any, amount: Decimal | None, cost_currency: str | None) -> dict[str, Any] | None:
+def token_state(dimensions: dict[str, int | None], model: str = DEFAULT_TOKEN_MODEL) -> str:
+    """Completeness is judged against the dimensions the declared model actually models."""
+    if all(value is None for value in dimensions.values()):
+        return "unknown"
+    modeled = TOKEN_MODELS.get(model)
+    if modeled is None:
+        return "partial"
+    unmodeled = [key for key in TOKEN_KEYS if key not in modeled]
+    complete = all(dimensions[key] is not None for key in modeled) and \
+        all(dimensions[key] is None for key in unmodeled)
+    return "complete" if complete else "partial"
+
+
+def token_relation_holds(model: str, counts: dict[str, int]) -> bool:
+    """Check the declared relation between prompt and output dimensions."""
+    if model not in TOKEN_MODELS:
+        return False
+    if counts["reasoning_output_tokens"] > counts["output_tokens"]:
+        return False
+    if model == "subset_input_v1":
+        return counts["cached_input_tokens"] <= counts["input_tokens"]
+    disjoint_total = counts["input_tokens"] + counts["cached_input_tokens"] + \
+        counts["cache_creation_input_tokens"] + counts["output_tokens"]
+    return counts["total_tokens"] in (0, disjoint_total)
+
+
+def priced_amount(model: str, counts: dict[str, int], rates: dict[str, Decimal]) -> Decimal:
+    """Price each billed dimension exactly once under the declared token model."""
+    output = Decimal(counts["output_tokens"] - counts["reasoning_output_tokens"]) * rates["output_tokens"] + \
+        Decimal(counts["reasoning_output_tokens"]) * rates["reasoning_output_tokens"]
+    if model == "subset_input_v1":
+        return Decimal(counts["input_tokens"] - counts["cached_input_tokens"]) * rates["input_tokens"] + \
+            Decimal(counts["cached_input_tokens"]) * rates["cached_input_tokens"] + output
+    return Decimal(counts["input_tokens"]) * rates["input_tokens"] + \
+        Decimal(counts["cached_input_tokens"]) * rates["cached_input_tokens"] + \
+        Decimal(counts["cache_creation_input_tokens"]) * rates["cache_creation_input_tokens"] + output
+
+
+def pricing_provenance(raw: Any, amount: Decimal | None, cost_currency: str | None,
+                       model: str = DEFAULT_TOKEN_MODEL) -> dict[str, Any] | None:
     if not isinstance(raw, dict) or amount is None or cost_currency is None:
         return None
     required = ("catalog_version", "model", "service_tier")
@@ -104,28 +163,28 @@ def pricing_provenance(raw: Any, amount: Decimal | None, cost_currency: str | No
         return None
     counts = inputs.get("token_counts")
     rates = inputs.get("rates_per_token")
-    if not isinstance(counts, dict) or not isinstance(rates, dict):
+    modeled = TOKEN_MODELS.get(model)
+    if not isinstance(counts, dict) or not isinstance(rates, dict) or modeled is None:
         return None
-    normalized_counts = {key: token(counts.get(key)) for key in TOKEN_KEYS}
-    normalized_rates = {key: decimal(rates.get(key)) for key in TOKEN_KEYS}
+    # A dimension the declared model does not price must not appear at all: an unpriced
+    # count would otherwise be billed as if it were free.
+    if set(counts) - set(modeled) or set(rates) - set(modeled):
+        return None
+    normalized_counts = {key: token(counts.get(key)) for key in modeled}
+    normalized_rates = {key: decimal(rates.get(key)) for key in modeled}
     if any(value is None for value in normalized_counts.values()) or any(value is None for value in normalized_rates.values()):
         return None
-    # Total, cached input, and reasoning output overlap their parent dimensions. The
-    # method prices only disjoint portions, so telemetry is never double-counted.
-    if normalized_rates["total_tokens"] != 0 or normalized_counts["cached_input_tokens"] > normalized_counts["input_tokens"] or \
-            normalized_counts["reasoning_output_tokens"] > normalized_counts["output_tokens"]:
+    # Total always overlaps its parent dimensions, and reasoning output always overlaps
+    # output. Whether cached input overlaps input is provider-specific, so the declared
+    # model decides. The method prices only disjoint portions, never double-counting.
+    if normalized_rates["total_tokens"] != 0 or not token_relation_holds(model, normalized_counts):
         return None
-    calculated = (
-        Decimal(normalized_counts["input_tokens"] - normalized_counts["cached_input_tokens"]) * normalized_rates["input_tokens"] +
-        Decimal(normalized_counts["cached_input_tokens"]) * normalized_rates["cached_input_tokens"] +
-        Decimal(normalized_counts["output_tokens"] - normalized_counts["reasoning_output_tokens"]) * normalized_rates["output_tokens"] +
-        Decimal(normalized_counts["reasoning_output_tokens"]) * normalized_rates["reasoning_output_tokens"]
-    )
-    if calculated != amount:
+    if priced_amount(model, normalized_counts, normalized_rates) != amount:
         return None
     return {
         "catalog_version": raw["catalog_version"], "model": raw["model"], "service_tier": raw["service_tier"],
         "currency": pricing_currency, "timestamp": timestamp, "formula_method": "token_rate_v1",
+        "token_model": model,
         "inputs": {"token_counts": normalized_counts,
                    "rates_per_token": {key: amount_value(value) for key, value in normalized_rates.items()}},
     }
@@ -171,7 +230,8 @@ def normalize_usage(usage: Any) -> dict[str, Any]:
     """Normalize usage without deriving absent totals or billing semantics."""
     raw = usage if isinstance(usage, dict) else {}
     dimensions = token_dimensions(raw)
-    state = token_state(dimensions)
+    model = declared_token_model(raw)
+    state = token_state(dimensions, model)
     raw_amount = raw.get("cost_amount", raw.get("cost_usd"))
     parsed_amount = runtime_cost(raw_amount)
     legacy_cost = raw.get("cost_usd")
@@ -180,7 +240,7 @@ def normalize_usage(usage: Any) -> dict[str, Any]:
         cost_currency = "USD"
     requested = raw.get("cost_provenance", raw.get("cost_state", "unknown"))
     provenance = requested if requested in COST_PROVENANCES else "unknown"
-    pricing = pricing_provenance(raw.get("pricing"), parsed_amount, cost_currency) if provenance == "pricing_estimate" else None
+    pricing = pricing_provenance(raw.get("pricing"), parsed_amount, cost_currency, model) if provenance == "pricing_estimate" else None
     allocation = allocation_provenance(raw.get("allocation"), parsed_amount, cost_currency) if provenance == "allocated_subscription" else None
     runtime = runtime_provenance(raw.get("runtime_cost")) if provenance == "runtime_reported" else None
     valid = (provenance == "pricing_estimate" and pricing is not None) or \
@@ -193,7 +253,7 @@ def normalize_usage(usage: Any) -> dict[str, Any]:
     return {
         "tokens": dimensions["total_tokens"], **dimensions,
         "cache_read_input_tokens": dimensions["cached_input_tokens"],
-        "token_state": state,
+        "token_model": model, "token_state": state,
         "usage_state": "reported" if state != "unknown" or parsed_amount is not None else "unknown",
         "cost_usd": amount_value(parsed_amount) if cost_state != "unknown" and cost_currency == "USD" else None,
         "cost_amount": amount_value(parsed_amount) if cost_state != "unknown" else None,
@@ -322,8 +382,12 @@ def summarize(attempts: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def terminal_subject(attempt: dict[str, Any], verifier: dict[str, Any], subject_attempt_id: str, reviewed_sha: str) -> bool:
+    # A verification must name an attempt other than its own. Comparing only the full
+    # identity tuple would let one actor re-run under the same --attempt-id as writer and
+    # then reviewer and still count as independently verified.
     return attempt.get("program_id") == verifier.get("program_id") and attempt.get("issue_id") == verifier.get("issue_id") and \
-        attempt.get("attempt_id") == subject_attempt_id and attempt.get("role") in {"writer", "implementer"} and \
+        attempt.get("attempt_id") == subject_attempt_id and verifier.get("attempt_id") != subject_attempt_id and \
+        attempt.get("role") in {"writer", "implementer"} and \
         attempt.get("status") == "pass" and attempt.get("exit_status") == 0 and attempt.get("observation_verdict") == "pass" and \
         sha(attempt.get("current_sha")) == reviewed_sha and attempt_identity(attempt) != attempt_identity(verifier)
 
@@ -334,8 +398,13 @@ def verified_outcomes(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         outcome = normalize_verified_outcome(attempt)
         if outcome is None:
             continue
-        if not any(terminal_subject(subject, attempt, outcome["subject_attempt_id"], outcome["reviewed_sha"]) for subject in attempts):
+        subject = next((candidate for candidate in attempts
+                        if terminal_subject(candidate, attempt, outcome["subject_attempt_id"], outcome["reviewed_sha"])), None)
+        if subject is None:
             continue
+        # Cost per outcome must credit the work that was verified, not the review that
+        # verified it, so rollups are scoped by the subject attempt.
+        outcome["subject_identity"] = attempt_identity(subject)
         previous = outcomes.get(outcome["outcome_id"])
         # Verifier retries have fresh immutable evidence hashes. They represent one
         # outcome when their program/issue/SHA/subject decision agree; changing any
@@ -371,11 +440,15 @@ def aggregate_attempts(records: list[dict[str, Any]]) -> dict[str, Any]:
                        "outcome_count": len(ids)})
         return result
 
+    by_identity = {attempt_identity(attempt): attempt for attempt in attempts}
+    def outcome_subject(outcome: dict[str, Any]) -> dict[str, Any]:
+        return by_identity[tuple(outcome["subject_identity"])]
+
     overall = with_outcomes(attempts, outcomes)
     by_attempt: dict[str, dict[str, Any]] = {}
     for key in sorted({logical_attempt_identity(attempt) for attempt in attempts}):
         group = [attempt for attempt in attempts if logical_attempt_identity(attempt) == key]
-        scoped = [outcome for outcome in outcomes if logical_attempt_identity(next(attempt for attempt in attempts if attempt_identity(attempt) == outcome["verifier_identity"])) == key]
+        scoped = [outcome for outcome in outcomes if logical_attempt_identity(outcome_subject(outcome)) == key]
         by_attempt[encoded_identity(key)] = with_outcomes(group, scoped)
     rollups: dict[str, Any] = {"by_attempt": by_attempt, "by_phase": {}, "by_issue": {}, "by_program": {},
                                "overall_unique_attempts": overall}
@@ -384,7 +457,8 @@ def aggregate_attempts(records: list[dict[str, Any]]) -> dict[str, Any]:
         for attempt in attempts:
             groups.setdefault(attempt[level], []).append(attempt)
         target = {"phase": "by_phase", "issue_id": "by_issue", "program_id": "by_program"}[level]
-        rollups[target] = {key: with_outcomes(groups[key], [outcome for outcome in outcomes if next(attempt for attempt in attempts if attempt_identity(attempt) == outcome["verifier_identity"])[level] == key]) for key in sorted(groups)}
+        rollups[target] = {key: with_outcomes(groups[key], [outcome for outcome in outcomes if outcome_subject(outcome)[level] == key])
+                           for key in sorted(groups)}
     return {**overall, "deduplicated_replays": deduplicated_replays,
             "verified_outcomes": outcomes, "attempts": attempts, "rollups": rollups}
 

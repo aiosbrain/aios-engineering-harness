@@ -9,6 +9,10 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every job here only reads the tree. Least privilege by default.
+permissions:
+  contents: read
+
 env:
   # Pinned exact Bun version (also used by plugin-test). Bump deliberately.
   BUN_VERSION: "1.2.23"

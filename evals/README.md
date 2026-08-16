@@ -51,11 +51,20 @@ program, issue, and reviewed SHA; incomplete evidence counts zero.
 `by_issue`, `by_program`, and explicitly labelled `overall_unique_attempts` views.
 Each carries separately-scoped `independently_verified_outcome_count` and stable IDs
 (with legacy `outcome_count` as an alias), so cost-per-outcome calculations never merge
-cost buckets. The
-five independent token dimensions are total, input, cached input, output, and reasoning
-output. State is `complete` only when all five are reported, `partial` when any but not
-all are reported, and `unknown` when none are; legacy `usage_state` stays `reported`
-when any token dimension or a cost exists. No missing provider total is derived.
+cost buckets. An outcome is scoped to the attempt that was *verified*, not to the review
+that verified it, so cost per outcome lands on the work that produced it.
+
+The independent token dimensions are total, input, cached input, cache-creation input,
+output, and reasoning output. `usage.token_model` declares how they relate, because
+providers differ: `subset_input_v1` (OpenAI/Codex) treats `input_tokens` as the whole
+prompt with cached input a subset of it and no billed cache-creation dimension, while
+`disjoint_input_v1` (Anthropic/Claude) treats input, cache read, and cache creation as
+mutually disjoint dimensions that sum to the prompt. State is `complete` only when every
+dimension the declared model describes is reported and no dimension it does not describe
+is present, `partial` when some but not all are, and `unknown` when none are; an
+unrecognized model can never be `complete`. Legacy `usage_state` stays `reported` when
+any token dimension or a cost exists. Accounting derives no missing provider total; a
+driver may report one only where its model makes it exact (the disjoint sum).
 Each token dimension must be a finite, nonnegative safe integer no larger than
 9007199254740991; runtime costs use the same finite, nonnegative JSON-safe magnitude.
 Invalid fields are null independently, preserving valid sibling telemetry and recomputing
@@ -65,10 +74,11 @@ Costs are grouped by provenance and currency, never folded into an unlabeled tot
 `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.
 `runtime_reported` means only that a runtime emitted a numeric field; its source field
 and `runtime_reported_not_billed_or_actual` semantics are retained, not billed or actual
-spend. Pricing estimates require versioned `token_rate_v1` inputs (all five token counts
-and rates), model, service tier, currency, ISO timestamp, and exact recomputation. That
-method prices uncached input, cached input, non-reasoning output, and reasoning output
-as disjoint portions; the total-token rate is explicitly zero.
+spend. Pricing estimates require versioned `token_rate_v1` inputs (a count and a rate for
+exactly the dimensions the declared token model prices, no more and no fewer), model,
+service tier, currency, ISO timestamp, and exact recomputation. That method prices only
+disjoint portions: uncached input, cached input, cache creation where the model has it,
+non-reasoning output, and reasoning output; the total-token rate is explicitly zero.
 Subscription allocations require versioned `proportional_allocation_v1` inputs and an
 exact amount/numerator/denominator recomputation. The harness ships no live catalog.
 

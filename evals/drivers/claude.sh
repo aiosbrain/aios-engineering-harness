@@ -27,19 +27,30 @@ else
 fi
 
 END=$(date +%s)
+# Anthropic's prompt dimensions are disjoint: `input_tokens` is the uncached remainder
+# only, and `cache_read_input_tokens` / `cache_creation_input_tokens` are separate billed
+# dimensions beside it. Cache writes bill above base input, so dropping them silently
+# undercounts. The API emits no `total_tokens` and no separate reasoning dimension, so the
+# total is the exact sum of the disjoint dimensions when every one of them is known.
 USAGE=$(jq -s '
   ([.[] | select(.type == "result")] | last // {}) as $r | ($r.usage // {}) as $u |
   def token: if type == "number" and isfinite and . >= 0 and floor == . and . <= 9007199254740991 then . else null end;
   def cost: if type == "number" and isfinite and . >= 0 and . <= 9007199254740991 then . else null end;
-  {tokens:($u.total_tokens | token),total_tokens:($u.total_tokens | token),
-   input_tokens:($u.input_tokens | token),cached_input_tokens:($u.cache_read_input_tokens | token),
-   cache_read_input_tokens:($u.cache_read_input_tokens | token),output_tokens:($u.output_tokens | token),
-   reasoning_output_tokens:null,cost_usd:($r.total_cost_usd | cost)} as $usage |
-  $usage + {token_state:(if ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | all(.[]; type == "number")) then "complete" elif ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | any(.[]; type == "number")) then "partial" else "unknown" end),
+  {input_tokens:($u.input_tokens | token),cached_input_tokens:($u.cache_read_input_tokens | token),
+   cache_read_input_tokens:($u.cache_read_input_tokens | token),
+   cache_creation_input_tokens:($u.cache_creation_input_tokens | token),
+   output_tokens:($u.output_tokens | token),
+   reasoning_output_tokens:null,cost_usd:($r.total_cost_usd | cost)} as $base |
+  [$base.input_tokens,$base.cached_input_tokens,$base.cache_creation_input_tokens,$base.output_tokens] as $parts |
+  (if any($parts[]; . == null) then null else ($parts | add | token) end) as $summed |
+  (($u.total_tokens | token) // $summed) as $total |
+  ($base + {token_model:"disjoint_input_v1",tokens:$total,total_tokens:$total}) as $usage |
+  [$usage.total_tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.cache_creation_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] as $dims |
+  $usage + {token_state:(if ($dims | all(.[]; type == "number")) then "complete" elif ($dims | any(.[]; type == "number")) then "partial" else "unknown" end),
              cost_state:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
              cost_provenance:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
              runtime_cost:(if $usage.cost_usd != null then {source_field:"result.total_cost_usd",semantics:"runtime_reported_not_billed_or_actual"} else null end)}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"cache_read_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","runtime_cost":null}')
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"cache_read_input_tokens":null,"cache_creation_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_model":"disjoint_input_v1","token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","runtime_cost":null}')
 jq -n --arg runtime claude --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg stderr "$STDERR" --arg reason "${UNAVAILABLE_REASON:-}" --argjson exit_status "$STATUS" \
   --argjson duration_ms "$(( (END-START)*1000 ))" --argjson usage "$USAGE" \

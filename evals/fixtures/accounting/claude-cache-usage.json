@@ -1,0 +1,22 @@
+{
+  "schema_version": "accounting-fixture.v2",
+  "source": "final result event of evals/results/20260804T015653Z-claude/tdd-under-deadline-claude-1/transcript.json (real 2026-08-04 Claude run; evals/results/ is gitignored, so the usage block is recorded verbatim here)",
+  "runtime": "claude",
+  "token_model": "disjoint_input_v1",
+  "result": {
+    "usage": {
+      "input_tokens": 169,
+      "cache_creation_input_tokens": 30685,
+      "cache_read_input_tokens": 471819,
+      "output_tokens": 5957,
+      "service_tier": "standard"
+    },
+    "total_cost_usd": 0.57746075,
+    "model": "claude-opus-5[1m]"
+  },
+  "expected": {
+    "total_tokens": 508630,
+    "subset_model_undercount": 477945,
+    "note": "input_tokens is the uncached remainder only, so cached input is 2791x input here. Under a subset model the cached>input guard rejects the run and cache creation vanishes, undercounting by 30685 tokens (6%)."
+  }
+}

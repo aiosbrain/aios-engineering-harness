@@ -96,5 +96,36 @@ run_driver opencode "$OPENCODE_OVERFLOW"
 jq -e '.usage.total_tokens == null and .usage.input_tokens == 2 and .usage.output_tokens == 2 and .usage.cost_usd == null and .usage.cost_state == "unknown"' "$OPENCODE_OVERFLOW/run/driver.json" >/dev/null 2>&1
 report "opencode rejects JSON-unsafe post-sum overflow without poisoning valid siblings" $?
 
+# Real recorded Claude usage: input_tokens is the uncached remainder only, so cached input
+# dwarfs it and cache creation is a billed dimension of its own.
+FIXTURE="$ROOT/evals/fixtures/accounting/claude-cache-usage.json"
+CLAUDE_CACHED="$TMP/claude-cached"
+mkdir -p "$CLAUDE_CACHED/bin"
+jq -c '{type:"result",usage:.result.usage,total_cost_usd:.result.total_cost_usd}' "$FIXTURE" > "$CLAUDE_CACHED/result.json"
+printf '%s\n' '#!/bin/sh' "cat '$CLAUDE_CACHED/result.json'" > "$CLAUDE_CACHED/bin/claude"
+chmod +x "$CLAUDE_CACHED/bin/claude"
+run_driver claude "$CLAUDE_CACHED"
+jq -e --slurpfile fixture "$FIXTURE" '
+  ($fixture[0].result.usage) as $recorded | ($fixture[0].expected) as $expected |
+  .usage.token_model == "disjoint_input_v1" and
+  .usage.input_tokens == $recorded.input_tokens and
+  .usage.cached_input_tokens == $recorded.cache_read_input_tokens and
+  .usage.cache_read_input_tokens == $recorded.cache_read_input_tokens and
+  .usage.cache_creation_input_tokens == $recorded.cache_creation_input_tokens and
+  .usage.output_tokens == $recorded.output_tokens and
+  .usage.total_tokens == $expected.total_tokens and .usage.tokens == $expected.total_tokens and
+  .usage.total_tokens != $expected.subset_model_undercount and
+  .usage.cost_state == "runtime_reported"' "$CLAUDE_CACHED/run/driver.json" >/dev/null 2>&1
+report "claude records cache creation and totals the disjoint dimensions from a real cached run" $?
+
+CLAUDE_PARTIAL="$TMP/claude-partial"
+mkdir -p "$CLAUDE_PARTIAL/bin"
+printf '%s\n' '#!/bin/sh' \
+  'echo "{\"type\":\"result\",\"usage\":{\"input_tokens\":5,\"cache_read_input_tokens\":7,\"output_tokens\":3}}"' > "$CLAUDE_PARTIAL/bin/claude"
+chmod +x "$CLAUDE_PARTIAL/bin/claude"
+run_driver claude "$CLAUDE_PARTIAL"
+jq -e '.usage.cache_creation_input_tokens == null and .usage.total_tokens == null and .usage.tokens == null and .usage.input_tokens == 5 and .usage.token_state == "partial"' "$CLAUDE_PARTIAL/run/driver.json" >/dev/null 2>&1
+report "claude never invents a total while a disjoint dimension is missing" $?
+
 echo "runtime-accounting.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1
