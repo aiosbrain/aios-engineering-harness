@@ -88,8 +88,8 @@ for REQUIRED in hooks.SessionStart hooks.SubagentStart hooks.UserPromptSubmit ho
   grep -F "$REQUIRED" "$CASE_C/run/argv.txt" >/dev/null 2>&1 || { report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 1; continue; }
   report "codex.sh: explicit headless hook/reasoning injection ($REQUIRED)" 0
 done
-jq -e '.usage.tokens == 2 and .usage.cost_usd == null' "$CASE_C/run/driver.json" >/dev/null 2>&1
-report "codex.sh: complete token usage is summed while cost remains unknown" $?
+jq -e '.usage.tokens == null and .usage.input_tokens == 1 and .usage.output_tokens == 1 and .usage.token_state == "partial" and .usage.cost_usd == null and .usage.cost_state == "unknown" and .usage.cost_provenance == "unknown"' "$CASE_C/run/driver.json" >/dev/null 2>&1
+report "codex.sh: absent provider total stays null with partial token telemetry" $?
 
 # Case D: a present-but-partial usage object must not be coerced to zero.
 CASE_D="$TMP/case-d"
@@ -102,9 +102,25 @@ exit 0
 EOF
 chmod +x "$TMP/bin/codex"
 run_fake_codex "$CASE_D" >/dev/null 2>&1
-jq -e '.usage.tokens == null and .usage.input_tokens == null and .usage.output_tokens == null and .usage.cost_usd == null' \
+jq -e '.usage.tokens == null and .usage.input_tokens == null and .usage.cached_input_tokens == 9 and .usage.output_tokens == null and .usage.token_state == "partial" and .usage.cost_usd == null' \
   "$CASE_D/run/driver.json" >/dev/null 2>&1
 report "codex.sh: partial usage remains unknown rather than zero" $?
+
+# Case E: every runtime uses JSON-safe numeric telemetry. Codex must reject invalid
+# dimensions independently while retaining a valid sibling; no total is inferred.
+CASE_E="$TMP/case-e"
+mkdir -p "$CASE_E"
+cat > "$TMP/bin/codex" <<'EOF'
+#!/bin/sh
+echo '{"type":"turn.started"}'
+echo '{"type":"turn.completed","usage":{"total_tokens":-1,"input_tokens":1.5,"cached_input_tokens":true,"output_tokens":9007199254740992,"reasoning_output_tokens":2}}'
+exit 0
+EOF
+chmod +x "$TMP/bin/codex"
+run_fake_codex "$CASE_E" >/dev/null 2>&1
+jq -e '.usage.tokens == null and .usage.total_tokens == null and .usage.input_tokens == null and .usage.cached_input_tokens == null and .usage.output_tokens == null and .usage.reasoning_output_tokens == 2 and .usage.token_state == "partial"' \
+  "$CASE_E/run/driver.json" >/dev/null 2>&1
+report "codex.sh: rejects negative fractional boolean and oversized telemetry independently" $?
 
 echo "codex-driver.test.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

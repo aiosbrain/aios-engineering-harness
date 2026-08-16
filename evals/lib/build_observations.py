@@ -12,6 +12,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import normalize_transcript
+import accounting
 
 
 TOOL_TYPES = {"command_execution", "file_change", "mcp_tool_call", "collab_tool_call"}
@@ -62,7 +63,8 @@ def read_jsonl(path: Path) -> tuple[list[dict[str, Any]], int]:
 def build_observations(
     *, runtime: str, transcript_path: Path, hook_path: Path, driver: dict[str, Any],
     run_id: str, phase: str, role: str, reasoning: str, frozen_sha: str,
-    current_sha: str, diff_path: Path, phase_status: str,
+    current_sha: str, diff_path: Path, phase_status: str, program_id: str = "unknown",
+    issue_id: str = "unknown", attempt_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     transcript, malformed_transcript = read_jsonl(transcript_path)
     hooks, malformed_hooks = read_jsonl(hook_path)
@@ -98,7 +100,8 @@ def build_observations(
         if turn_id is None and item_id is None:
             turn_id = current_turn or f"{run_id}:run"
         observations.append({
-            "schema_version": "observations.v1", "run_id": run_id, "phase": phase,
+            "schema_version": "observations.v1", "program_id": program_id, "issue_id": issue_id,
+            "attempt_id": attempt_id or run_id, "run_id": run_id, "phase": phase,
             "role": role, "runtime": runtime, "model": model,
             "runtime_version": runtime_version, "harness_sha": harness_sha,
             "reasoning_level": reasoning, "turn_id": turn_id,
@@ -132,7 +135,8 @@ def build_observations(
             emit("turn.completed", "pass", transcript_ref, "info", "unknown",
                  turn_id=terminal_turn,
                  summary={"usage": {key: usage.get(key) if isinstance(usage.get(key), (int, float)) else None
-                                    for key in ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")}})
+                                    for key in ("input_tokens", "cached_input_tokens", "cache_creation_input_tokens",
+                                                "output_tokens", "reasoning_output_tokens")}})
             continue
         if kind not in {"item.started", "item.completed"}:
             continue
@@ -288,13 +292,12 @@ def build_observations(
              summary={"exit_status": driver_exit if isinstance(driver_exit, (int, float)) else None,
                       "actionable_model_output": valid_model_output})
 
-    usage = driver.get("usage") if isinstance(driver.get("usage"), dict) else {}
-    tokens = usage.get("tokens") if isinstance(usage.get("tokens"), (int, float)) else None
-    cost = usage.get("cost_usd") if isinstance(usage.get("cost_usd"), (int, float)) else None
-    usage_state = "reported" if tokens is not None or cost is not None else "unknown"
-    emit("usage.reported", usage_state, driver_ref, "info", "runtime_environment",
-         summary={"tokens": tokens, "cost_usd": cost, "token_state": "reported" if tokens is not None else "unknown",
-                  "cost_state": "reported" if cost is not None else "unknown"})
+    usage = accounting.normalize_usage(driver.get("usage"))
+    usage_state = usage["usage_state"]
+    emit("usage.reported", usage["token_state"], driver_ref, "info", "runtime_environment",
+         summary={"tokens": usage["tokens"], "cost_usd": usage["cost_usd"],
+                  "token_state": usage["token_state"], "cost_state": usage["cost_state"],
+                  "cost_provenance": usage["cost_provenance"], "accounting": usage})
 
     issue_levels = {level for level, _, _ in issues}
     verdict = "error" if "error" in issue_levels else ("needs_review" if "needs_review" in issue_levels else "pass")
@@ -315,13 +318,16 @@ def build_observations(
          summary={"observation_verdict": verdict, "issue_count": len(issues)})
 
     summary = {
-        "schema_version": "observations.v1", "run_id": run_id, "verdict": verdict,
+        "schema_version": "observations.v1", "program_id": program_id, "issue_id": issue_id,
+        "attempt_id": attempt_id or run_id, "run_id": run_id, "phase": phase, "role": role,
+        "verdict": verdict,
         "effective_status": effective_status, "observation_count": len(observations),
         "malformed_transcript_lines": malformed_transcript, "malformed_hook_lines": malformed_hooks,
         "started_turns": len(started_turns), "completed_turns": len(completed_turns),
         "started_tools": len(started_tools), "completed_tools": len(completed_tools),
         "started_checks": len(started_checks), "completed_checks": len(completed_checks),
         "headless_session_hook_seen": session_hook_seen, "usage_state": usage_state,
+        "accounting": usage,
         "issues": [{"severity": level, "attribution": attribution, "summary": summary}
                    for level, attribution, summary in issues],
     }
@@ -342,6 +348,9 @@ def main() -> int:
     parser.add_argument("--current-sha", required=True)
     parser.add_argument("--diff", type=Path, required=True)
     parser.add_argument("--phase-status", required=True)
+    parser.add_argument("--program-id", default="unknown")
+    parser.add_argument("--issue-id", default="unknown")
+    parser.add_argument("--attempt-id")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
     args = parser.parse_args()
@@ -353,10 +362,11 @@ def main() -> int:
         runtime=args.runtime, transcript_path=args.transcript, hook_path=args.hooks,
         driver=driver, run_id=args.run_id, phase=args.phase, role=args.role,
         reasoning=args.reasoning, frozen_sha=args.frozen_sha, current_sha=args.current_sha,
-        diff_path=args.diff, phase_status=args.phase_status,
+        diff_path=args.diff, phase_status=args.phase_status, program_id=args.program_id,
+        issue_id=args.issue_id, attempt_id=args.attempt_id,
     )
-    args.output.write_text("".join(json.dumps(row, separators=(",", ":")) + "\n" for row in observations))
-    args.summary.write_text(json.dumps(summary, separators=(",", ":")) + "\n")
+    args.output.write_text("".join(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n" for row in observations))
+    args.summary.write_text(json.dumps(summary, separators=(",", ":"), allow_nan=False) + "\n")
     return 0
 
 

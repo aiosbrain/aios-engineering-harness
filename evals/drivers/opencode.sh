@@ -23,14 +23,27 @@ else
 fi
 
 END=$(date +%s)
+# OpenCode is multi-provider, so it reports no cache dimension at all and the subset model
+# holds vacuously. Capturing `tokens.cache.read`/`.write` here would first require
+# deriving the token model from the resolved provider, not from the runtime name.
 USAGE=$(jq -s '
   [.[] | select(.type == "step_finish") | .part] as $steps |
-  {tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.total // 0) | add) end),
-   input_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.input // 0) | add) end),
-   output_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.output // 0) | add) end),
-   reasoning_output_tokens:(if ($steps | length) == 0 then null else ($steps | map(.tokens.reasoning // 0) | add) end),
-   cost_usd:(if ($steps | length) == 0 then null else ($steps | map(.cost // 0) | add) end)}
-' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"cost_usd":null}')
+  def token: if type == "number" and isfinite and . >= 0 and floor == . and . <= 9007199254740991 then . else null end;
+  def cost: if type == "number" and isfinite and . >= 0 and . <= 9007199254740991 then . else null end;
+  def sum_tokens(path):
+    if ($steps | length) == 0 then null
+    else [$steps[] | (path | token)] as $values | if any($values[]; . == null) then null else ($values | add | token) end end;
+  def sum_cost:
+    if ($steps | length) == 0 then null
+    else [$steps[] | (.cost | cost)] as $values | if any($values[]; . == null) then null else ($values | add | cost) end end;
+  {tokens:sum_tokens(.tokens.total),total_tokens:sum_tokens(.tokens.total),input_tokens:sum_tokens(.tokens.input),
+   cached_input_tokens:null,output_tokens:sum_tokens(.tokens.output),
+   reasoning_output_tokens:sum_tokens(.tokens.reasoning),token_model:"subset_input_v1",cost_usd:sum_cost} as $usage |
+  $usage + {token_state:(if ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | all(.[]; type == "number")) then "complete" elif ([$usage.tokens,$usage.input_tokens,$usage.cached_input_tokens,$usage.output_tokens,$usage.reasoning_output_tokens] | any(.[]; type == "number")) then "partial" else "unknown" end),
+             cost_state:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
+             cost_provenance:(if $usage.cost_usd != null then "runtime_reported" else "unknown" end),
+             runtime_cost:(if $usage.cost_usd != null then {source_field:"step_finish.part.cost",semantics:"runtime_reported_not_billed_or_actual"} else null end)}
+' "$STDOUT" 2>/dev/null || printf '%s' '{"tokens":null,"total_tokens":null,"input_tokens":null,"cached_input_tokens":null,"output_tokens":null,"reasoning_output_tokens":null,"cost_usd":null,"token_model":"subset_input_v1","token_state":"unknown","cost_state":"unknown","cost_provenance":"unknown","runtime_cost":null}')
 jq -n --arg runtime opencode --arg model "$MODEL" --arg transcript "$STDOUT" \
   --arg stderr "$STDERR" --arg reason "${UNAVAILABLE_REASON:-}" --argjson exit_status "$STATUS" \
   --argjson duration_ms "$(( (END-START)*1000 ))" --argjson usage "$USAGE" \
