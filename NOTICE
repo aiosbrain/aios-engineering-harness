@@ -1,0 +1,38 @@
+AIOS Engineering Harness
+Copyright (C) 2026 Chetan Nandakumar and John Ellison
+
+This software is licensed under the Apache License, Version 2.0. See LICENSE.
+
+The LICENSE file is the verbatim Apache text with a copyright line and nothing else, so
+that automated license detection recognises it; this NOTICE and LICENSING.md are where the
+rationale is recorded.
+
+Earlier releases were published under the MIT License, reproduced in LICENSE-MIT, and
+those releases remain available under those terms. That prior notice named Pravos LLC
+(Vibrana / AIOS); it is retained verbatim in LICENSE-MIT as the MIT License requires, and
+the relicense to Apache-2.0 was made on the authority of the copyright holders.
+
+A curated, provenance-cited harness for agentic software engineering: skills, guards, a
+review panel, rubrics, and multi-model routing, installed into a consuming repository by
+install.sh.
+
+
+Provenance
+----------
+
+This harness curates practices, prompts and rubrics drawn from published sources.
+PROVENANCE.md is the authoritative attribution record for that CONTENT; this NOTICE covers
+the code. Where a skill, rubric or adapter is adapted from an externally published work,
+PROVENANCE.md names the source, and that work's own terms continue to apply to it. The
+Apache-2.0 grant here covers our own contribution.
+
+
+Components
+----------
+
+The harness is predominantly shell and markdown with no bundled runtime dependencies.
+Adapters shell out to third-party CLIs (model providers, git, gh) which the user installs
+themselves and which are not redistributed here.
+
+Because this repository is Apache-2.0 and the AIOS server is AGPL-3.0-only, nothing here
+may depend on that server's code. See LICENSING.md.

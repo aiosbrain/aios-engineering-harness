@@ -123,4 +123,9 @@ run `.harness/install.sh`, and fill in the blanks — no manual steps.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**Apache-2.0** — see [`LICENSE`](LICENSE) and [`LICENSING.md`](LICENSING.md).
+
+Permissive on purpose: this harness installs into your codebase, and nothing here attaches
+to the code it guards or generates. Prior releases were MIT and **remain MIT**, preserved in
+[`LICENSE-MIT`](LICENSE-MIT) — the change is going-forward only. The AIOS server is AGPL-3.0
+while this is Apache-2.0; that split is deliberate and `LICENSING.md` explains it.
