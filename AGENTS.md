@@ -27,9 +27,17 @@ Three facts to know before touching anything:
 ## Commands
 
 ```bash
+# Everything below in one command (reports missing bun/jsonschema or a missing private
+# leak-gate term set as SKIPPED, separately from a full pass).
+./check
+
 # Shell lint — matches CI's lint-shell job
-shellcheck --severity=warning $(git ls-files '*.sh')   # .shellcheckrc scopes reviewed exceptions
+git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning check  # .shellcheckrc scopes reviewed exceptions
 git ls-files -z '*.sh' | xargs -0 -I{} bash -n {}
+
+# Confidentiality gate — full term sweep when the local term set is installed;
+# otherwise baseline rules run and the command reports SKIPPED (not passed).
+AIOS_LEAK_GATE_PRODUCT_REPO=1 bash scripts/leak-gate.sh .
 
 # Eval-lab test suite — matches CI's tests job (needs bun on PATH; conformance.test.sh
 # shells out to `bun test` for the OpenCode adapter)
@@ -42,9 +50,13 @@ bash evals/runtime-accounting.test.sh
 bash evals/inject-context.test.sh
 bash evals/route-skills.test.sh
 bash evals/stop-continuation.test.sh
+bash evals/install.test.sh
+bash evals/visual-qa.test.sh
 python3 evals/evidence.test.py
 python3 evals/observations.test.py
 python3 evals/accounting.test.py
+python3 evals/outbound-comms-guard.test.py
+python3 evals/skill-runtime-conformance.test.py
 
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)
 bun test evals/opencode-plugin.test.ts
@@ -102,6 +114,12 @@ conformance-smoke) plus, for anything touching `hooks/` or `adapters/`, the rele
 > prevented, add the rule here (or promote it to a hook if it must be *guaranteed*).
 > Date each entry. Prune entries that graduate into hooks or formatters.
 
+- `2026-08-20` — the ledger entry below was written and then not applied to the four
+  suites that were ALREADY unwired: `install.test.sh`, `visual-qa.test.sh`,
+  `outbound-comms-guard.test.py`, `skill-runtime-conformance.test.py` sat outside CI for
+  weeks (33 passing assertions, zero of them gating a PR). Writing the rule does not
+  retire the debt — when you add a rule about wiring, sweep for existing violations in
+  the same commit. `./check` now runs every suite, so the two lists can be diffed.
 - `2026-08-06` — a new `evals/*.test.{sh,py}` file is not a check until it is listed in
   **both** `.github/workflows/ci.yml`'s `tests` job and the Commands block above. Adding
   the test file alone leaves it passing locally and never run on a PR — silent zero
