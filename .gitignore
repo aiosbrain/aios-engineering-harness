@@ -7,3 +7,6 @@ evals/results/
 evals/scratch/
 __pycache__/
 *.py[cod]
+
+# local worktree hydration marker (machine-absolute paths — never commit)
+.aios/.worktree-hydrated
