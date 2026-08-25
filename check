@@ -1,1 +1,166 @@
-echo "TODO: set your real gate (e.g. npm test)"; exit 0
+#!/usr/bin/env bash
+# check — the one-command local gate for this repo.
+#
+# Runs the same suites as the repository's CI workflows, in CI job order, so a green
+# ./check means the locally runnable publication gates are green. This file used to be
+# `echo "TODO: set your real gate"`,
+# which exited 0 on a repo that already had six CI jobs — a one-command setup that
+# asserted nothing is worse than none, because it reads as a pass.
+#
+# Optional toolchains (bun, python jsonschema) and an unavailable private leak-gate term
+# set are SKIPPED with a loud notice rather than failed. Skips are counted and printed in
+# the summary so reduced coverage can never look like a full pass. CI installs every
+# toolchain and requires the private term set on trusted events; fork PRs remain an explicit
+# baseline-only skip by design.
+#
+# Usage: ./check
+# Exit 0 = every runnable gate passed; 1 = at least one failed.
+
+set -uo pipefail
+cd "$(dirname "$0")"
+
+# Newline-delimited labels, not bash arrays: this repo supports stock bash 3.2 (macOS),
+# where expanding an EMPTY array under `set -u` is an unbound-variable error.
+FAILED=""
+FAILED_N=0
+SKIPPED=""
+SKIPPED_N=0
+
+run() { # $1 = label, rest = command
+  local label="$1"
+  shift
+  printf '\n=== %s\n' "$label"
+  if "$@"; then
+    printf '%s\n' "--- ok: $label"
+  else
+    printf '%s\n' "--- FAIL: $label"
+    FAILED="${FAILED}  - ${label}
+"
+    FAILED_N=$((FAILED_N + 1))
+  fi
+}
+
+skip() { # $1 = label, $2 = reason
+  printf '\n=== %s\n--- SKIPPED: %s\n' "$1" "$2"
+  SKIPPED="${SKIPPED}  - ${1} (${2})
+"
+  SKIPPED_N=$((SKIPPED_N + 1))
+}
+
+run_leak_gate() {
+  local label="scripts/leak-gate.sh"
+  local output rc last_line
+  printf '\n=== %s\n' "$label"
+  output=$(AIOS_LEAK_GATE_PRODUCT_REPO=1 bash scripts/leak-gate.sh . 2>&1)
+  rc=$?
+  printf '%s\n' "$output"
+  if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "--- FAIL: $label"
+    FAILED="${FAILED}  - ${label}
+"
+    FAILED_N=$((FAILED_N + 1))
+    return
+  fi
+
+  # The scanner's last non-blank line is a pinned coverage-aware verdict. Exit 0 alone is
+  # insufficient: baseline-only runs intentionally exit 0 but must remain visibly SKIPPED.
+  last_line=$(printf '%s\n' "$output" | awk 'NF { line = $0 } END { print line }')
+  case "$last_line" in
+    "leak-gate: CLEAN"*)
+      printf '%s\n' "--- ok: $label"
+      ;;
+    "leak-gate: SKIPPED"*)
+      printf '%s\n' "--- SKIPPED: private term set not loaded (baseline passed)"
+      SKIPPED="${SKIPPED}  - ${label} (private term set not loaded; baseline passed)
+"
+      SKIPPED_N=$((SKIPPED_N + 1))
+      ;;
+    *)
+      printf '%s\n' "--- FAIL: $label (unexpected verdict contract)"
+      FAILED="${FAILED}  - ${label} (unexpected verdict contract)
+"
+      FAILED_N=$((FAILED_N + 1))
+      ;;
+  esac
+}
+
+# ── lint-shell ───────────────────────────────────────────────────────────────
+if command -v shellcheck >/dev/null 2>&1; then
+  run "shellcheck --severity=warning" bash -c \
+    'git ls-files -z "*.sh" | xargs -0 shellcheck --severity=warning check'
+else
+  skip "shellcheck" "shellcheck not on PATH"
+fi
+
+run "bash -n over tracked shell scripts" bash -c '
+  fail=0
+  while IFS= read -r -d "" f; do bash -n "$f" || fail=1; done < <(git ls-files -z "*.sh")
+  exit "$fail"
+'
+
+# ── confidentiality leak gate (separate CI workflow) ─────────────────────────
+run_leak_gate
+
+# ── tests ────────────────────────────────────────────────────────────────────
+for t in runner guards graders; do
+  run "evals/$t.test.sh" bash "evals/$t.test.sh"
+done
+
+# conformance.test.sh shells out to `bun test` for the OpenCode adapter suite.
+if command -v bun >/dev/null 2>&1; then
+  run "evals/conformance.test.sh" bash evals/conformance.test.sh
+else
+  skip "evals/conformance.test.sh" "bun not on PATH"
+fi
+
+for t in codex-driver runtime-accounting inject-context route-skills \
+  stop-continuation install visual-qa; do
+  run "evals/$t.test.sh" bash "evals/$t.test.sh"
+done
+
+for t in evidence observations accounting outbound-comms-guard skill-runtime-conformance; do
+  run "evals/$t.test.py" python3 "evals/$t.test.py"
+done
+
+# ── plugin-test ───────────────────────────────────────────────────────────────
+if command -v bun >/dev/null 2>&1; then
+  run "bun test evals/opencode-plugin.test.ts" bun test evals/opencode-plugin.test.ts
+else
+  skip "bun test evals/opencode-plugin.test.ts" "bun not on PATH"
+fi
+
+# ── schema ───────────────────────────────────────────────────────────────────
+if python3 -c 'import jsonschema' >/dev/null 2>&1; then
+  run "evals/validate_judge_schema.py" python3 evals/validate_judge_schema.py
+else
+  skip "evals/validate_judge_schema.py" "pip install jsonschema"
+fi
+
+# ── secret-scan ──────────────────────────────────────────────────────────────
+run "hooks/scan-tree-secrets.test.sh" bash hooks/scan-tree-secrets.test.sh
+run "hooks/scan-tree-secrets.sh" bash hooks/scan-tree-secrets.sh
+
+# ── conformance-smoke ────────────────────────────────────────────────────────
+run "evals/run.sh --runtime mock --scenario all" bash -c '
+  results="$(mktemp -d)"
+  trap '\''find "$results" -depth -delete'\'' EXIT
+  bash evals/run.sh --runtime mock --scenario all --runs 1 --judge mock \
+    --results-dir "$results" || exit 1
+  jq -e ".total > 0 and .by_status.pass == .total" "$results/summary.json" >/dev/null
+'
+
+# ── summary ──────────────────────────────────────────────────────────────────
+printf '\n========================================\n'
+if [ "$SKIPPED_N" -gt 0 ]; then
+  printf 'SKIPPED (%d) — not run, not passed:\n%s' "$SKIPPED_N" "$SKIPPED"
+fi
+if [ "$FAILED_N" -gt 0 ]; then
+  printf 'FAILED (%d):\n%s' "$FAILED_N" "$FAILED"
+  printf 'check: FAILED\n'
+  exit 1
+fi
+if [ "$SKIPPED_N" -gt 0 ]; then
+  printf 'check: PASSED WITH SKIPS\n'
+  exit 0
+fi
+printf 'check: PASSED\n'

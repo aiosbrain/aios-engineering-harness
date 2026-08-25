@@ -29,7 +29,9 @@ jobs:
         # pre-existing deliberate patterns (see the file for the rationale per code).
         # Only tracked files — evals/scratch/ and evals/results/ are gitignored
         # run artifacts and must never be scanned.
-        run: shellcheck --severity=warning $(git ls-files '*.sh')
+        # `check` is the one-command local gate; it has no .sh suffix, so it must be
+        # named explicitly or it lints in no job at all.
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck --severity=warning check
 
       - name: bash -n syntax check over tracked shell scripts
         run: |
@@ -70,12 +72,20 @@ jobs:
         run: bash evals/route-skills.test.sh
       - name: stop-continuation.test.sh
         run: bash evals/stop-continuation.test.sh
+      - name: install.test.sh
+        run: bash evals/install.test.sh
+      - name: visual-qa.test.sh
+        run: bash evals/visual-qa.test.sh
       - name: evidence.test.py
         run: python3 evals/evidence.test.py
       - name: observations.test.py
         run: python3 evals/observations.test.py
       - name: accounting.test.py
         run: python3 evals/accounting.test.py
+      - name: outbound-comms-guard.test.py
+        run: python3 evals/outbound-comms-guard.test.py
+      - name: skill-runtime-conformance.test.py
+        run: python3 evals/skill-runtime-conformance.test.py
 
   plugin-test:
     name: OpenCode plugin tests (bun, pinned)
