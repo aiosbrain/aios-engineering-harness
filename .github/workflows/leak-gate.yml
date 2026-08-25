@@ -14,17 +14,24 @@
 #
 # A missing term set degrades the gate to baseline-only and still exits 0. That is the
 # right behaviour for a fork PR and the WRONG thing to call green on a trusted event, so
-# push and same-repo PRs assert the secret is present BEFORE running the sweep. A repo
-# settings regression must fail loudly rather than quietly stop checking identifiers.
+# push and same-repo PRs assert the secret is present BEFORE running the sweep. PR scans
+# execute this base-branch workflow and base-branch scanner against the candidate tree;
+# unreviewed PR code must never receive the private term set. A repo settings regression
+# must fail loudly rather than quietly stop checking identifiers.
 name: leak-gate
 
 on:
-  pull_request:
+  # Use the base branch's workflow and scanner. A normal pull_request workflow would let a
+  # same-repo PR replace scripts/leak-gate.sh and read AIOS_LEAK_TERMS_B64 before review.
+  # Candidate files are treated only as scanner input; no candidate code is executed.
+  pull_request_target:
   push:
     branches: [main]
 
 concurrency:
-  group: leak-gate-${{ github.ref }}
+  # pull_request_target uses the base ref for every PR, so include the PR number to avoid
+  # unrelated PR scans cancelling each other.
+  group: leak-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -36,9 +43,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out trusted gate
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Download candidate tree as inert scanner input
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          archive="$RUNNER_TEMP/leak-gate-candidate.tar.gz"
+          candidate="$RUNNER_TEMP/leak-gate-candidate"
+          mkdir "$candidate"
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --output "$archive" \
+            "https://api.github.com/repos/$HEAD_REPOSITORY/tarball/$HEAD_SHA"
+          if ! tar -xzf "$archive" --strip-components=1 -C "$candidate" >/dev/null 2>&1; then
+            echo "::error::Candidate tree could not be extracted safely."
+            exit 2
+          fi
 
       - name: Assert leak-gate term secret present (fail closed)
         # Scoped to push + same-repo PRs: fork PRs never receive repo secrets, so requiring
@@ -54,7 +82,8 @@ jobs:
           fi
           echo "leak-gate term secret present — the identifier sweep will run."
 
-      - name: Confidentiality leak gate
+      - name: Confidentiality leak gate (trusted event, full term set)
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         # AIOS_LEAK_GATE_PRODUCT_REPO=1 turns on the baseline PATH rules (workspace spine
         # dirs, clients/<name>/, docs/bd/). They are off by default because the same script
         # is also pointed at workspace-shaped roots, where those paths are normal. This repo
@@ -62,4 +91,15 @@ jobs:
         env:
           AIOS_LEAK_TERMS_B64: ${{ secrets.AIOS_LEAK_TERMS_B64 }}
           AIOS_LEAK_GATE_PRODUCT_REPO: "1"
-        run: bash scripts/leak-gate.sh .
+        run: |
+          scan_root=.
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            scan_root="$RUNNER_TEMP/leak-gate-candidate"
+          fi
+          bash scripts/leak-gate.sh "$scan_root"
+
+      - name: Confidentiality leak gate (fork PR, baseline only)
+        if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          AIOS_LEAK_GATE_PRODUCT_REPO: "1"
+        run: bash scripts/leak-gate.sh "$RUNNER_TEMP/leak-gate-candidate"
