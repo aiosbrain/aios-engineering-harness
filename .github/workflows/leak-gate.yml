@@ -1,0 +1,65 @@
+# Confidentiality leak gate.
+#
+# WHY THIS REPO NEEDS ITS OWN: this repository is PUBLIC and, until now, had no
+# confidentiality check on the publication path — no CI gate and no pre-push hook. The
+# machine-absolute path this PR untracks (`.aios/.worktree-hydrated`, AIO-1057) was
+# committed and published to `main` with nothing objecting, because there was nothing to
+# object. Untracking it fixes one file; this workflow is what stops the next one. The
+# sibling repos each carry a copy of this gate; this one was never wired up (AIO-986).
+#
+# The gate has two layers and only one of them needs a secret:
+#   • BASELINE  — name-free shape rules shipped in scripts/leak-gate.sh. Always run,
+#                 including on fork PRs, which GitHub never gives secrets to.
+#   • TERM SET  — the private identifier list, supplied as $AIOS_LEAK_TERMS_B64.
+#
+# A missing term set degrades the gate to baseline-only and still exits 0. That is the
+# right behaviour for a fork PR and the WRONG thing to call green on a trusted event, so
+# push and same-repo PRs assert the secret is present BEFORE running the sweep. A repo
+# settings regression must fail loudly rather than quietly stop checking identifiers.
+name: leak-gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: leak-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  leak-gate:
+    name: confidentiality leak gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Assert leak-gate term secret present (fail closed)
+        # Scoped to push + same-repo PRs: fork PRs never receive repo secrets, so requiring
+        # one there would block every outside contribution. Forks still get the baseline.
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          # Boolean only. The secret value is never exported or echoed by this step.
+          HAS_LEAK_TERMS: ${{ secrets.AIOS_LEAK_TERMS_B64 != '' }}
+        run: |
+          if [ "$HAS_LEAK_TERMS" != "true" ]; then
+            echo "::error::AIOS_LEAK_TERMS_B64 repo secret is missing or empty — the confidential-identifier sweep cannot run, and a baseline-only pass must not look green on trusted events. Reinstall the secret (Settings > Secrets and variables > Actions) with: ~/.config/aios-nda/sync-nda-terms.sh"
+            exit 1
+          fi
+          echo "leak-gate term secret present — the identifier sweep will run."
+
+      - name: Confidentiality leak gate
+        # AIOS_LEAK_GATE_PRODUCT_REPO=1 turns on the baseline PATH rules (workspace spine
+        # dirs, clients/<name>/, docs/bd/). They are off by default because the same script
+        # is also pointed at workspace-shaped roots, where those paths are normal. This repo
+        # is never a workspace, so a `2-work/` or `clients/acme/` path here is always wrong.
+        env:
+          AIOS_LEAK_TERMS_B64: ${{ secrets.AIOS_LEAK_TERMS_B64 }}
+          AIOS_LEAK_GATE_PRODUCT_REPO: "1"
+        run: bash scripts/leak-gate.sh .
