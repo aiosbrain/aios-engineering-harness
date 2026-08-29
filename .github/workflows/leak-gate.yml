@@ -59,6 +59,8 @@ jobs:
           candidate="$RUNNER_TEMP/leak-gate-candidate"
           mkdir "$candidate"
           curl --fail --silent --show-error --location \
+            --proto '=https' \
+            --proto-redir '=https' \
             --header "Authorization: Bearer $GH_TOKEN" \
             --header "Accept: application/vnd.github+json" \
             --output "$archive" \
