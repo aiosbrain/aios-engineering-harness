@@ -22,7 +22,7 @@ jobs:
     name: Shell lint (shellcheck + bash -n)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: ShellCheck (severity warning) over tracked shell scripts
         # `.shellcheckrc` at repo root scopes out a short, reviewed allowlist of
@@ -46,11 +46,11 @@ jobs:
     name: Eval-lab test suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # conformance.test.sh shells out to `bun test` for the OpenCode adapter suite,
       # so bun must be present here even though plugin-test also runs it directly.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
@@ -91,8 +91,8 @@ jobs:
     name: OpenCode plugin tests (bun, pinned)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - name: bun test evals/opencode-plugin.test.ts
@@ -102,8 +102,8 @@ jobs:
     name: Judge schema + fixture validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
       - run: pip install jsonschema
@@ -114,7 +114,7 @@ jobs:
     name: Secret scan (tracked tree)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Self-test the scanner (synthetic secret, assembled at runtime)
         run: bash hooks/scan-tree-secrets.test.sh
       - name: Scan tracked files for committed secrets
@@ -124,7 +124,7 @@ jobs:
     name: Conformance smoke (mock runtime, all scenarios)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Eval lab smoke (mock driver + mock judge, all scenarios)
         # Proves the lab's own wiring (setup -> install -> grade -> judge -> aggregate)
         # runs end to end, and that a normal run leaves the tree clean (results-dir is
