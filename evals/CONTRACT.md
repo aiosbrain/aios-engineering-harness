@@ -93,3 +93,14 @@ modules after AIO-612. AIO-754 sits under AIO-681 and is blocked by AIO-612 whil
 blocking AIO-710; until that unsettled final cut lands, do not claim Workspace's current
 sync includes detailed accounting. During that staged interval, `run.sh` preserves
 legacy execution and emits explicit `legacy_unknown` accounting.
+
+
+## Finding observations (separate, contract-only artifact)
+
+[`FINDING_OBSERVATIONS_CONTRACT.md`](FINDING_OBSERVATIONS_CONTRACT.md) defines
+`finding-observations.v1.jsonl`, its closed schema, identity, lifecycle, completeness,
+and privacy validation boundary. The normative contract and schema are reusable core;
+trusted producer/codebase registries are consumer-owned configuration. The fixtures and
+`finding_observations_test_support.py` are test-only conformance oracles, not producers.
+This artifact neither extends nor changes `observations.v1.jsonl`; no finding emission,
+upload, persistence, or dashboard behavior is implemented here.
