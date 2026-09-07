@@ -54,6 +54,11 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install jsonschema
+
       - name: runner.test.sh
         run: bash evals/runner.test.sh
       - name: guards.test.sh
@@ -80,6 +85,8 @@ jobs:
         run: python3 evals/evidence.test.py
       - name: observations.test.py
         run: python3 evals/observations.test.py
+      - name: finding_observations_contract.test.py
+        run: python3 evals/finding_observations_contract.test.py
       - name: accounting.test.py
         run: python3 evals/accounting.test.py
       - name: outbound-comms-guard.test.py
