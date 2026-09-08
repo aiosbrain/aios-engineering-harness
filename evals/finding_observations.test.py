@@ -23,7 +23,8 @@ try:
     sys.path.insert(0, str(ROOT))
     from finding_observations_test_support import read_jsonl, validate
 except ImportError:
-    validate = None
+    print("SKIPPED: finding producer tests require development-only jsonschema", file=sys.stderr)
+    sys.exit(77)
 
 
 def candidate(key=None, outcome="verified", evidence="complete"):
@@ -48,7 +49,7 @@ def inventory(items, raw=None, capture="complete"):
 
 
 class ProducerTests(unittest.TestCase):
-    def run_builder(self, data, config=CONFIG):
+    def run_builder(self, data, config=CONFIG, issue_id="AIO-1099"):
         directory = tempfile.TemporaryDirectory()
         root = Path(directory.name)
         source = root / "inventory.json"
@@ -57,7 +58,7 @@ class ProducerTests(unittest.TestCase):
         summary = generation / "finding-observations.v1.summary.json"
         source.write_text(json.dumps(data, separators=(",", ":")))
         args = SimpleNamespace(inventory=str(source), config=str(config), schema=str(SCHEMA),
-                               program_id="AIO-1099", issue_id="AIO-1099",
+                               program_id="AIO-1099", issue_id=issue_id,
                                harness_run_id="test-run", attempt=1)
         try:
             records = PRODUCER.build(args)
@@ -177,6 +178,15 @@ class ProducerTests(unittest.TestCase):
         with directory:
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(output.exists())
+
+    def test_issue_number_above_schema_bound_is_rejected(self):
+        directory, result, output, summary = self.run_builder(
+            inventory([candidate()]), issue_id="AIO-2147483648")
+        with directory:
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("issue number exceeds contract bound", result.stderr)
+            self.assertFalse(output.exists())
+            self.assertFalse(summary.exists())
 
     def test_injected_publication_rename_failure_exposes_no_generation(self):
         directory, result, source, _ = self.run_builder(inventory([candidate()]))

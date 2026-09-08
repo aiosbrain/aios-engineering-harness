@@ -150,7 +150,9 @@ def attribution(args, config):
     match = re.fullmatch(r"([A-Z][A-Z0-9]{1,9})-([1-9][0-9]*)", args.issue_id)
     if match:
         require(match.group(1) in config["linear_teams"], "untrusted attribution team")
-        issue = {"type": "linear", "team": match.group(1), "number": int(match.group(2))}
+        issue_number = int(match.group(2))
+        require(issue_number <= MAX_INT, "issue number exceeds contract bound")
+        issue = {"type": "linear", "team": match.group(1), "number": issue_number}
     return {
         "program_id": hashlib.sha256(("program\0" + args.program_id).encode()).hexdigest(),
         "run_id": hashlib.sha256(("harness-run\0" + args.harness_run_id).encode()).hexdigest(),

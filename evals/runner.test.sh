@@ -40,10 +40,21 @@ else
 fi
 
 LEGACY_BYTES_DIR="$ROOT/evals/results/$STAMP-legacy-bytes"
-HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+mkdir -p "$LEGACY_BYTES_DIR/bin"
+cat > "$LEGACY_BYTES_DIR/bin/date" <<'EOF'
+#!/bin/sh
+case "$*" in
+  '+%s') printf '%s\n' 100 ;;
+  '-u +%Y%m%dT%H%M%SZ') printf '%s\n' 20000101T000000Z ;;
+  '-u +%Y-%m-%dT%H:%M:%SZ') printf '%s\n' 2000-01-01T00:00:00Z ;;
+  *) /bin/date "$@" ;;
+esac
+EOF
+chmod +x "$LEGACY_BYTES_DIR/bin/date"
+PATH="$LEGACY_BYTES_DIR/bin:$PATH" HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
   bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
 cp "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl" "$LEGACY_BYTES_DIR/legacy-before.jsonl"
-HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+PATH="$LEGACY_BYTES_DIR/bin:$PATH" HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
   bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
 if cmp -s "$LEGACY_BYTES_DIR/legacy-before.jsonl" "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl"; then
   PASS=$((PASS+1)); echo "PASS: finding production leaves legacy observation bytes stable on replay"
