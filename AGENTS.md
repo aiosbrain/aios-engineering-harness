@@ -55,6 +55,7 @@ bash evals/visual-qa.test.sh
 python3 evals/evidence.test.py
 python3 evals/observations.test.py
 python3 evals/finding_observations_contract.test.py
+python3 evals/finding_observations.test.py
 python3 evals/accounting.test.py
 python3 evals/outbound-comms-guard.test.py
 python3 evals/skill-runtime-conformance.test.py

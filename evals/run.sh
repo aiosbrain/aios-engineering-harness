@@ -101,6 +101,64 @@ write_early_failure() {
       status:"error",exit_status:null,current_sha:$current_sha,reviewed_sha:"unknown",observation_verdict:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,role:$role,verified_outcome:null,usage:$usage,
       artifacts:{observations:$observations,observation_summary:$observation_summary},
       observation_completeness:$completeness[0]}' > "$RUN_RECORD"
+  produce_finding_observations unknown
+  attach_finding_observations
+}
+
+# Finding analytics is deliberately independent from the evaluation verdict. A broken
+# optional adapter/producer is visible as analytics failure, but can never upgrade or
+# rewrite the result of the driver/grade/judge path.
+produce_finding_observations() {
+  MODE=${1:-adapter}
+  FINDING_PRODUCER='{"status":"not_available","capture_status":"unknown","reason":"finding observation core is not installed"}'
+  [ -f "$ROOT/evals/lib/build_finding_observations.py" ] || return 0
+  [ -f "$ROOT/evals/config/finding-observations.trusted.json" ] || return 0
+  [ -f "$ROOT/evals/schemas/finding-observations.v1.schema.json" ] || return 0
+
+  rm -f "$FINDING_OBSERVATIONS" "$FINDING_SUMMARY" "$FINDING_INVENTORY"
+  ADAPTER_STATUS=0
+  if [ "$MODE" = adapter ] && [ -x "$SCENARIO_DIR/finding-candidates.sh" ]; then
+    "$SCENARIO_DIR/finding-candidates.sh" "$WORKSPACE" "$RUN_DIR" "$DRIVER_RECORD" "$GRADE" "$JUDGE_RECORD" > "$FINDING_INVENTORY" || ADAPTER_STATUS=$?
+  else
+    OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    jq -nc --arg observed_at "$OBSERVED_AT" '{schema_version:"finding-candidate-inventory.v1",capture_status:"unknown",detector_completed:null,observed_at:$observed_at,raw_candidates:null,candidates:[]}' > "$FINDING_INVENTORY"
+  fi
+  # A nonzero adapter may still have captured a trustworthy partial inventory.
+  # The producer decides whether that closed envelope is safe and reconcilable.
+  if [ ! -s "$FINDING_INVENTORY" ]; then
+    OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    jq -nc --arg observed_at "$OBSERVED_AT" '{schema_version:"finding-candidate-inventory.v1",capture_status:"unknown",detector_completed:null,observed_at:$observed_at,raw_candidates:null,candidates:[]}' > "$FINDING_INVENTORY"
+  fi
+  if python3 "$ROOT/evals/lib/build_finding_observations.py" \
+      --inventory "$FINDING_INVENTORY" --output "$FINDING_OBSERVATIONS" --summary "$FINDING_SUMMARY" \
+      --config "$ROOT/evals/config/finding-observations.trusted.json" \
+      --schema "$ROOT/evals/schemas/finding-observations.v1.schema.json" \
+      --program-id "$PROGRAM_ID" --issue-id "$ISSUE_ID" --harness-run-id "$RUN_ID" --attempt "$INDEX"; then
+    CAPTURE_STATUS=$(jq -r '.capture_status' "$FINDING_SUMMARY")
+    if [ "$ADAPTER_STATUS" -eq 0 ]; then
+      FINDING_PRODUCER=$(jq -nc --arg capture "$CAPTURE_STATUS" '{status:(if $capture == "unknown" then "unknown" else "success" end),capture_status:$capture,reason:null}')
+    else
+      FINDING_PRODUCER=$(jq -nc --arg capture "$CAPTURE_STATUS" --argjson adapter_status "$ADAPTER_STATUS" '{status:"partial",capture_status:$capture,reason:("candidate adapter exited " + ($adapter_status|tostring) + " after capture")}')
+    fi
+  else
+    rm -f "$FINDING_OBSERVATIONS" "$FINDING_SUMMARY" "$FINDING_INVENTORY"
+    FINDING_PRODUCER='{"status":"error","capture_status":"unknown","reason":"finding observation validation failed; no artifact retained"}'
+  fi
+}
+
+attach_finding_observations() {
+  if [ -f "$FINDING_SUMMARY" ]; then
+    jq --arg inventory "$FINDING_INVENTORY" --arg observations "$FINDING_OBSERVATIONS" --arg summary "$FINDING_SUMMARY" \
+      --argjson producer "$FINDING_PRODUCER" --slurpfile completeness "$FINDING_SUMMARY" '
+        .finding_observations_producer=$producer |
+        .artifacts.finding_candidate_inventory=$inventory |
+        .artifacts.finding_observations=$observations |
+        .artifacts.finding_observation_summary=$summary |
+        .finding_observation_completeness=$completeness[0]' "$RUN_RECORD" > "$RUN_RECORD.tmp" && mv "$RUN_RECORD.tmp" "$RUN_RECORD"
+  else
+    jq --argjson producer "$FINDING_PRODUCER" '.finding_observations_producer=$producer' \
+      "$RUN_RECORD" > "$RUN_RECORD.tmp" && mv "$RUN_RECORD.tmp" "$RUN_RECORD"
+  fi
 }
 
 while [ $# -gt 0 ]; do
@@ -189,6 +247,9 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     RUN_RECORD="$RUN_DIR/run.json"
     OBSERVATIONS="$RUN_DIR/observations.v1.jsonl"
     OBSERVATION_SUMMARY="$RUN_DIR/observations.v1.summary.json"
+    FINDING_INVENTORY="$RUN_DIR/finding-candidate-inventory.v1.json"
+    FINDING_OBSERVATIONS="$RUN_DIR/finding-observations.v1.jsonl"
+    FINDING_SUMMARY="$RUN_DIR/finding-observations.v1.summary.json"
 
     (cd "$WORKSPACE" && "$SCENARIO_DIR/setup.sh")
     SETUP_STATUS=$?
@@ -271,6 +332,8 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     elif [ "$JUDGE_STATUS" = needs_review ]; then STATUS=needs_review
     else STATUS=pass
     fi
+
+    produce_finding_observations adapter
 
     OBSERVATION_SOURCE="$TRACE"
     if [ "$RUNTIME" = codex ] && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
@@ -358,6 +421,7 @@ PY
       --slurpfile completeness "$OBSERVATION_SUMMARY" \
       '.artifacts.observations=$observations | .artifacts.observation_summary=$observation_summary | .observation_completeness=$completeness[0]' \
       "$RUN_RECORD" > "$RUN_RECORD.tmp" && mv "$RUN_RECORD.tmp" "$RUN_RECORD"
+    attach_finding_observations
     RUN_RECORDS+=("$RUN_RECORD")
     echo "$RUN_ID: $STATUS"
     cleanup_scratch
@@ -378,8 +442,11 @@ jq -s '
      passed:([.[] | select(.status == "pass")] | length),duration_ms:(map(.duration_ms // 0) | add),
      tokens:(map(.usage.tokens) | if any(.[]; . == null) then null elif length == 0 then null else add end),
      cost_usd:null})),
+   finding_observations:{by_producer_status:(map(.finding_observations_producer.status // "not_available") | group_by(.) | map({key:.[0],value:length}) | from_entries),
+     runs:map({run_id,scenario,status:(.finding_observations_producer.status // "not_available"),capture_status:(.finding_observations_producer.capture_status // "unknown"),
+       counts:(.finding_observation_completeness.counts // null)})},
    runs:map({program_id,issue_id,phase,invocation_id,attempt_id,run_id,role,decision,verified_outcome,outcome_claim_status,scenario,runtime,model,status,exit_status,current_sha,reviewed_sha,duration_ms,tool_evidence,usage,forbidden_path_hit,
-     observation_verdict:(.observation_completeness.verdict // "missing")})}
+     finding_observations_producer,observation_verdict:(.observation_completeness.verdict // "missing")})}
 ' "${RUN_RECORDS[@]}" > "$RESULTS_DIR/summary.json"
 
 if [ -f "$ROOT/evals/lib/accounting.py" ]; then

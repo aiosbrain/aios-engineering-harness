@@ -39,6 +39,40 @@ else
   FAIL=$((FAIL+1)); echo "FAIL: missing semantic judge was counted as complete"
 fi
 
+LEGACY_BYTES_DIR="$ROOT/evals/results/$STAMP-legacy-bytes"
+HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
+cp "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl" "$LEGACY_BYTES_DIR/legacy-before.jsonl"
+HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
+if cmp -s "$LEGACY_BYTES_DIR/legacy-before.jsonl" "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl"; then
+  PASS=$((PASS+1)); echo "PASS: finding production leaves legacy observation bytes stable on replay"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: finding production changed legacy observation bytes"
+fi
+if jq -e '.finding_observations.runs[0].capture_status == "unknown" and
+           ([.finding_observations.runs[0].counts[]] | all(. == null))' "$REVIEW_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: unjudged clean review never claims a proven zero"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: unjudged clean review finding denominator"
+fi
+
+P1_FAILURE_DIR="$ROOT/evals/results/$STAMP-p1-provider-failure"
+bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 \
+  --mock-mode failure --judge mock --results-dir "$P1_FAILURE_DIR" >/dev/null
+if jq -e '.status == "error" and .finding_observations_producer.status == "success" and
+           .finding_observation_completeness.capture_status == "partial" and
+           .finding_observation_completeness.detector_completed == false and
+           .finding_observation_completeness.counts.raw_candidates == 1 and
+           .finding_observation_completeness.counts.emitted_candidates == 1 and
+           .finding_observation_completeness.counts.terminal_stage == 0 and
+           .finding_observation_completeness.counts.incomplete == 1' \
+    "$P1_FAILURE_DIR/review-honesty-real-p1-mock-1/run.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: provider failure after inventory capture emits discovered/incomplete evidence"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: provider failure after finding inventory capture"
+fi
+
 ALL_DIR="$ROOT/evals/results/$STAMP-all"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --judge mock \
   --results-dir "$ALL_DIR" >/dev/null
@@ -64,6 +98,14 @@ if jq -e '.accounting.attempt_count == .total and (.accounting.rollups.by_attemp
   PASS=$((PASS+1)); echo "PASS: aggregate summary contains exact-once accounting rollups"
 else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate accounting rollups"
+fi
+if jq -e '
+  (.finding_observations.runs[] | select(.scenario == "review-honesty-clean-diff") | .capture_status == "complete" and .counts.raw_candidates == 0 and .counts.emitted_candidates == 0) and
+  (.finding_observations.runs[] | select(.scenario == "review-honesty-real-p1") | .capture_status == "complete" and .counts.raw_candidates == 1 and .counts.emitted_candidates == 1 and .counts.terminal_stage == 1) and
+  (.finding_observations.runs[] | select(.scenario == "tdd-under-deadline") | .capture_status == "unknown" and ([.counts[]] | all(. == null)))' "$ALL_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: aggregate finding summaries distinguish proven empty, finding, and unknown"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: aggregate finding observation summaries"
 fi
 
 EXPLICIT_ALL_DIR="$ROOT/evals/results/$STAMP-all-explicit"
