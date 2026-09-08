@@ -224,7 +224,7 @@ def build(args):
         require(inventory["detector_completed"] is None and raw is None and not candidates, "unknown capture claims a denominator")
     else:
         require(inventory["detector_completed"] is (capture == "complete"), "capture completion mismatch")
-        require(type(raw) is int and 0 <= raw <= MAX_INT and raw >= len(candidates), "invalid raw candidate count")
+        require(type(raw) is int and 0 <= raw <= MAX_INT and raw == len(candidates), "invalid raw candidate count")
         require(raw != 0 or capture == "complete", "partial capture cannot prove empty")
     sanitized = []
     for item in candidates:

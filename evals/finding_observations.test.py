@@ -92,6 +92,14 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(summary["emission_gap_reason"], "malformed")
             self.assertNotIn("source_record_key", output.read_text().splitlines()[-1])
 
+    def test_raw_count_cannot_claim_unenumerated_malformed_entries(self):
+        directory, result, output, summary = self.run_builder(inventory([candidate()], raw=5))
+        with directory:
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("invalid raw candidate count", result.stderr)
+            self.assertFalse(output.exists())
+            self.assertFalse(summary.exists())
+
     def test_input_order_and_rebuild_are_byte_stable(self):
         second = candidate({"kind": "position", "value": 9}, "incomplete", "incomplete")
         first = inventory([candidate(), second])
