@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Producer tests for the sanitized finding-candidate inventory boundary."""
-import copy
 import importlib.util
 import json
 import os
-import subprocess
+# Test-only import; every invocation targets the repository-owned producer.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
@@ -28,7 +28,9 @@ except ImportError:
     validate = None
 
 
-def candidate(key=KEY, outcome="verified", evidence="complete"):
+def candidate(key=None, outcome="verified", evidence="complete"):
+    if key is None:
+        key = KEY
     return {
         "source_record_key": key,
         "codebases": ["harness"],
@@ -53,8 +55,9 @@ class ProducerTests(unittest.TestCase):
         root = Path(directory.name)
         source, output, summary = root / "inventory.json", root / "ledger.jsonl", root / "summary.json"
         source.write_text(json.dumps(data, separators=(",", ":")))
-        result = subprocess.run([
-            "python3", str(MODULE_PATH), "--inventory", str(source), "--output", str(output),
+        # The executable and script are absolute, controlled paths; no shell is involved.
+        result = subprocess.run([  # nosec B603
+            str(Path(sys.executable).resolve()), str(MODULE_PATH), "--inventory", str(source), "--output", str(output),
             "--summary", str(summary), "--config", str(config), "--schema", str(SCHEMA),
             "--program-id", "AIO-1099", "--issue-id", "AIO-1099", "--harness-run-id", "test-run",
         ], capture_output=True, text=True)
