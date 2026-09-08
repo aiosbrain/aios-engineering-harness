@@ -78,7 +78,9 @@ After driver, grade, and judge completion, a scenario may provide an executable
 and `$JUDGE_RECORD` as positional arguments and prints one closed
 `finding-candidate-inventory.v1` JSON object. The reusable producer validates that
 sanitized inventory against `evals/config/finding-observations.trusted.json`, then writes
-`finding-observations.v1.jsonl` and its run summary atomically with mode 0600.
+`finding-observations.v1.jsonl` and its run summary with mode 0600 inside a private
+generation directory. One atomic directory rename publishes the pair, so neither file is
+visible at its canonical artifact path unless both are complete and durable.
 
 A completed detector may prove zero candidates. A scenario with no adapter, or a failure
 before a trustworthy denominator exists, emits an explicit `unknown` capture and never a

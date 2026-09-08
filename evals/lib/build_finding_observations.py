@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import tempfile
 from datetime import datetime
@@ -292,68 +293,41 @@ def build(args):
     return records
 
 
-def write_atomic(path, records):
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=target.parent)
+def write_artifacts(generation_path, records):
+    """Publish a complete artifact generation through one atomic directory rename."""
+    generation = Path(generation_path)
+    generation.parent.mkdir(parents=True, exist_ok=True)
+    require(not generation.exists(), "refusing to overwrite an existing artifact generation")
+    temporary = Path(tempfile.mkdtemp(prefix=".finding-observations.", suffix=".tmp",
+                                      dir=generation.parent))
     try:
-        os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            for record in records:
-                handle.write(canonical(record).decode() + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, target)
-    except BaseException:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-        raise
-
-
-def write_artifacts(output_path, summary_path, records):
-    """Publish the summary first and ledger last; retain neither on any failure."""
-    output = Path(output_path)
-    summary = Path(summary_path)
-    require(output.parent == summary.parent, "artifacts must share an atomic-write directory")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    require(not output.exists() and not summary.exists(), "refusing to overwrite an existing artifact pair")
-    temporaries = []
-    try:
-        for target, values in ((summary, [records[-1]]), (output, records)):
-            fd, temporary = tempfile.mkstemp(prefix=target.name + ".", suffix=".tmp", dir=target.parent)
-            temporaries.append(temporary)
-            os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
+        for name, values in (("finding-observations.v1.summary.json", [records[-1]]),
+                             ("finding-observations.v1.jsonl", records)):
+            target = temporary / name
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                         stat.S_IRUSR | stat.S_IWUSR)
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
                 for record in values:
                     handle.write(canonical(record).decode() + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-        os.replace(temporaries[0], summary)
-        temporaries.pop(0)
-        os.replace(temporaries[0], output)
-        temporaries.pop(0)
+        directory_fd = os.open(temporary, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        # The generation is invisible at its canonical path until both files are
+        # durable. This rename is the sole publication commit point.
+        os.replace(temporary, generation)
     except BaseException:
-        for temporary in temporaries:
-            try:
-                os.unlink(temporary)
-            except FileNotFoundError:
-                pass
-        # A pair is the producer result. Never leave half a newly published pair.
-        for target in (output, summary):
-            try:
-                os.unlink(target)
-            except FileNotFoundError:
-                pass
+        shutil.rmtree(temporary, ignore_errors=True)
         raise
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--inventory", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--summary", required=True)
+    parser.add_argument("--generation-dir", required=True)
     parser.add_argument("--config", required=True)
     parser.add_argument("--schema", required=True)
     parser.add_argument("--program-id", default="unknown")
@@ -363,7 +337,7 @@ def main():
     args = parser.parse_args()
     require(1 <= args.attempt <= MAX_INT, "invalid attempt")
     records = build(args)
-    write_artifacts(args.output, args.summary, records)
+    write_artifacts(args.generation_dir, records)
 
 
 if __name__ == "__main__":

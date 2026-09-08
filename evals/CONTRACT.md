@@ -58,8 +58,9 @@ record shapes:
   a closed sanitized candidate inventory into the finding-observations v1 discovery
   lifecycle. It verifies the consumer's reviewed registry and pinned schema, preserves
   supplied observation time and structural identity, reconciles malformed accounting,
-  validates the complete ledger, and publishes through a mode-0600 temporary file plus
-  atomic rename. Producer failures never change an evaluation verdict or create a valid
+  validates the complete ledger, writes both mode-0600 artifacts inside a private
+  generation directory, and publishes that complete directory with one atomic rename.
+  Producer failures never change an evaluation verdict or create a valid
   analytics claim. `run.sh` remains compatible when this module and registry are absent.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
   runtime CLIs. Verified harness-agnostic: no reference to `.harness/`, `AGENTS.md`, or

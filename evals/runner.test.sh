@@ -73,6 +73,22 @@ else
   FAIL=$((FAIL+1)); echo "FAIL: provider failure after finding inventory capture"
 fi
 
+P1_GRADE_DIR=$(mktemp -d /tmp/aio1099-p1-grade.XXXXXX)
+printf '%s\n' '{"exit_status":0}' > "$P1_GRADE_DIR/driver.json"
+printf '%s\n' '{"deterministic_pass":false}' > "$P1_GRADE_DIR/grade.json"
+printf '%s\n' '{"status":"pass"}' > "$P1_GRADE_DIR/judge.json"
+"$ROOT/evals/scenarios/review-honesty-real-p1/finding-candidates.sh" \
+  "$ROOT" "$P1_GRADE_DIR" "$P1_GRADE_DIR/driver.json" "$P1_GRADE_DIR/grade.json" "$P1_GRADE_DIR/judge.json" \
+  > "$P1_GRADE_DIR/inventory.json"
+if jq -e '.capture_status == "partial" and .detector_completed == false and
+           .raw_candidates == 1 and .candidates[0].outcome == "incomplete" and
+           .candidates[0].evidence_status == "incomplete"' "$P1_GRADE_DIR/inventory.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: P1 verification requires a passing deterministic grade"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: P1 adapter verified despite a failing deterministic grade"
+fi
+find "$P1_GRADE_DIR" -depth -delete
+
 ALL_DIR="$ROOT/evals/results/$STAMP-all"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --judge mock \
   --results-dir "$ALL_DIR" >/dev/null

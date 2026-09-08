@@ -13,6 +13,7 @@ OBSERVED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # This fixed scenario owns the one-record sanitized detector inventory. Provider
 # output can verify it, but cannot create or erase its denominator.
 if jq -e '.exit_status == 0 and (.malformed // false | not)' "$DRIVER_RECORD" >/dev/null 2>&1 &&
+   jq -e '.deterministic_pass == true' "$GRADE" >/dev/null 2>&1 &&
    jq -e '.status == "pass"' "$JUDGE_RECORD" >/dev/null 2>&1; then
   CAPTURE=complete
   COMPLETED=true

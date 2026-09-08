@@ -2,12 +2,10 @@
 """Producer tests for the sanitized finding-candidate inventory boundary."""
 import importlib.util
 import json
-import os
-# Test-only import; every invocation targets the repository-owned producer.
-import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 from pathlib import Path
 
@@ -53,14 +51,20 @@ class ProducerTests(unittest.TestCase):
     def run_builder(self, data, config=CONFIG):
         directory = tempfile.TemporaryDirectory()
         root = Path(directory.name)
-        source, output, summary = root / "inventory.json", root / "ledger.jsonl", root / "summary.json"
+        source = root / "inventory.json"
+        generation = root / "generation"
+        output = generation / "finding-observations.v1.jsonl"
+        summary = generation / "finding-observations.v1.summary.json"
         source.write_text(json.dumps(data, separators=(",", ":")))
-        # The executable and script are absolute, controlled paths; no shell is involved.
-        result = subprocess.run([  # nosec B603
-            str(Path(sys.executable).resolve()), str(MODULE_PATH), "--inventory", str(source), "--output", str(output),
-            "--summary", str(summary), "--config", str(config), "--schema", str(SCHEMA),
-            "--program-id", "AIO-1099", "--issue-id", "AIO-1099", "--harness-run-id", "test-run",
-        ], capture_output=True, text=True)
+        args = SimpleNamespace(inventory=str(source), config=str(config), schema=str(SCHEMA),
+                               program_id="AIO-1099", issue_id="AIO-1099",
+                               harness_run_id="test-run", attempt=1)
+        try:
+            records = PRODUCER.build(args)
+            PRODUCER.write_artifacts(generation, records)
+            result = SimpleNamespace(returncode=0, stderr="")
+        except (OSError, UnicodeError, ValueError, TypeError, json.JSONDecodeError) as error:
+            result = SimpleNamespace(returncode=1, stderr=str(error))
         if result.returncode == 0 and validate is not None:
             validate(read_jsonl(output), json.loads(Path(config).read_text()))
         return directory, result, output, summary
@@ -174,28 +178,17 @@ class ProducerTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(output.exists())
 
-    def test_injected_second_rename_failure_removes_both_artifacts(self):
+    def test_injected_publication_rename_failure_exposes_no_generation(self):
         directory, result, source, _ = self.run_builder(inventory([candidate()]))
         with directory, tempfile.TemporaryDirectory() as destination:
             self.assertEqual(result.returncode, 0, result.stderr)
             records = [json.loads(line) for line in source.read_text().splitlines()]
-            output = Path(destination) / "ledger.jsonl"
-            summary = Path(destination) / "summary.json"
-            real_replace = os.replace
-            calls = 0
-
-            def fail_second(source_path, target_path):
-                nonlocal calls
-                calls += 1
-                if calls == 2:
-                    raise OSError("injected ledger rename failure")
-                return real_replace(source_path, target_path)
-
-            with mock.patch.object(PRODUCER.os, "replace", side_effect=fail_second):
+            generation = Path(destination) / "published-generation"
+            with mock.patch.object(PRODUCER.os, "replace", side_effect=OSError("injected commit failure")):
                 with self.assertRaises(OSError):
-                    PRODUCER.write_artifacts(output, summary, records)
-            self.assertFalse(output.exists())
-            self.assertFalse(summary.exists())
+                    PRODUCER.write_artifacts(generation, records)
+            self.assertFalse(generation.exists())
+            self.assertEqual(list(Path(destination).iterdir()), [])
 
 
 if __name__ == "__main__":

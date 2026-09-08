@@ -115,7 +115,8 @@ produce_finding_observations() {
   [ -f "$ROOT/evals/config/finding-observations.trusted.json" ] || return 0
   [ -f "$ROOT/evals/schemas/finding-observations.v1.schema.json" ] || return 0
 
-  rm -f "$FINDING_OBSERVATIONS" "$FINDING_SUMMARY" "$FINDING_INVENTORY"
+  rm -rf -- "$FINDING_GENERATION"
+  rm -f "$FINDING_INVENTORY"
   ADAPTER_STATUS=0
   if [ "$MODE" = adapter ] && [ -x "$SCENARIO_DIR/finding-candidates.sh" ]; then
     "$SCENARIO_DIR/finding-candidates.sh" "$WORKSPACE" "$RUN_DIR" "$DRIVER_RECORD" "$GRADE" "$JUDGE_RECORD" > "$FINDING_INVENTORY" || ADAPTER_STATUS=$?
@@ -130,7 +131,7 @@ produce_finding_observations() {
     jq -nc --arg observed_at "$OBSERVED_AT" '{schema_version:"finding-candidate-inventory.v1",capture_status:"unknown",detector_completed:null,observed_at:$observed_at,raw_candidates:null,candidates:[]}' > "$FINDING_INVENTORY"
   fi
   if python3 "$ROOT/evals/lib/build_finding_observations.py" \
-      --inventory "$FINDING_INVENTORY" --output "$FINDING_OBSERVATIONS" --summary "$FINDING_SUMMARY" \
+      --inventory "$FINDING_INVENTORY" --generation-dir "$FINDING_GENERATION" \
       --config "$ROOT/evals/config/finding-observations.trusted.json" \
       --schema "$ROOT/evals/schemas/finding-observations.v1.schema.json" \
       --program-id "$PROGRAM_ID" --issue-id "$ISSUE_ID" --harness-run-id "$RUN_ID" --attempt "$INDEX"; then
@@ -141,7 +142,8 @@ produce_finding_observations() {
       FINDING_PRODUCER=$(jq -nc --arg capture "$CAPTURE_STATUS" --argjson adapter_status "$ADAPTER_STATUS" '{status:"partial",capture_status:$capture,reason:("candidate adapter exited " + ($adapter_status|tostring) + " after capture")}')
     fi
   else
-    rm -f "$FINDING_OBSERVATIONS" "$FINDING_SUMMARY" "$FINDING_INVENTORY"
+    rm -rf -- "$FINDING_GENERATION"
+    rm -f "$FINDING_INVENTORY"
     FINDING_PRODUCER='{"status":"error","capture_status":"unknown","reason":"finding observation validation failed; no artifact retained"}'
   fi
 }
@@ -248,8 +250,9 @@ for SCENARIO_ID in "${SCENARIOS[@]}"; do
     OBSERVATIONS="$RUN_DIR/observations.v1.jsonl"
     OBSERVATION_SUMMARY="$RUN_DIR/observations.v1.summary.json"
     FINDING_INVENTORY="$RUN_DIR/finding-candidate-inventory.v1.json"
-    FINDING_OBSERVATIONS="$RUN_DIR/finding-observations.v1.jsonl"
-    FINDING_SUMMARY="$RUN_DIR/finding-observations.v1.summary.json"
+    FINDING_GENERATION="$RUN_DIR/finding-observations.v1.generation"
+    FINDING_OBSERVATIONS="$FINDING_GENERATION/finding-observations.v1.jsonl"
+    FINDING_SUMMARY="$FINDING_GENERATION/finding-observations.v1.summary.json"
 
     (cd "$WORKSPACE" && "$SCENARIO_DIR/setup.sh")
     SETUP_STATUS=$?
