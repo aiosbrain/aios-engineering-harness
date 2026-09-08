@@ -39,6 +39,67 @@ else
   FAIL=$((FAIL+1)); echo "FAIL: missing semantic judge was counted as complete"
 fi
 
+LEGACY_BYTES_DIR="$ROOT/evals/results/$STAMP-legacy-bytes"
+mkdir -p "$LEGACY_BYTES_DIR/bin"
+cat > "$LEGACY_BYTES_DIR/bin/date" <<'EOF'
+#!/bin/sh
+case "$*" in
+  '+%s') printf '%s\n' 100 ;;
+  '-u +%Y%m%dT%H%M%SZ') printf '%s\n' 20000101T000000Z ;;
+  '-u +%Y-%m-%dT%H:%M:%SZ') printf '%s\n' 2000-01-01T00:00:00Z ;;
+  *) /bin/date "$@" ;;
+esac
+EOF
+chmod +x "$LEGACY_BYTES_DIR/bin/date"
+PATH="$LEGACY_BYTES_DIR/bin:$PATH" HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
+cp "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl" "$LEGACY_BYTES_DIR/legacy-before.jsonl"
+PATH="$LEGACY_BYTES_DIR/bin:$PATH" HARNESS_INVOCATION_ID=legacy-byte-replay GIT_AUTHOR_DATE=2000-01-01T00:00:00Z GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
+  bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock --results-dir "$LEGACY_BYTES_DIR" >/dev/null
+if cmp -s "$LEGACY_BYTES_DIR/legacy-before.jsonl" "$LEGACY_BYTES_DIR/review-honesty-real-p1-mock-1/observations.v1.jsonl"; then
+  PASS=$((PASS+1)); echo "PASS: finding production leaves legacy observation bytes stable on replay"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: finding production changed legacy observation bytes"
+fi
+if jq -e '.finding_observations.runs[0].capture_status == "unknown" and
+           ([.finding_observations.runs[0].counts[]] | all(. == null))' "$REVIEW_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: unjudged clean review never claims a proven zero"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: unjudged clean review finding denominator"
+fi
+
+P1_FAILURE_DIR="$ROOT/evals/results/$STAMP-p1-provider-failure"
+bash "$ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 \
+  --mock-mode failure --judge mock --results-dir "$P1_FAILURE_DIR" >/dev/null
+if jq -e '.status == "error" and .finding_observations_producer.status == "success" and
+           .finding_observation_completeness.capture_status == "partial" and
+           .finding_observation_completeness.detector_completed == false and
+           .finding_observation_completeness.counts.raw_candidates == 1 and
+           .finding_observation_completeness.counts.emitted_candidates == 1 and
+           .finding_observation_completeness.counts.terminal_stage == 0 and
+           .finding_observation_completeness.counts.incomplete == 1' \
+    "$P1_FAILURE_DIR/review-honesty-real-p1-mock-1/run.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: provider failure after inventory capture emits discovered/incomplete evidence"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: provider failure after finding inventory capture"
+fi
+
+P1_GRADE_DIR=$(mktemp -d /tmp/aio1099-p1-grade.XXXXXX)
+printf '%s\n' '{"exit_status":0}' > "$P1_GRADE_DIR/driver.json"
+printf '%s\n' '{"deterministic_pass":false}' > "$P1_GRADE_DIR/grade.json"
+printf '%s\n' '{"status":"pass"}' > "$P1_GRADE_DIR/judge.json"
+"$ROOT/evals/scenarios/review-honesty-real-p1/finding-candidates.sh" \
+  "$ROOT" "$P1_GRADE_DIR" "$P1_GRADE_DIR/driver.json" "$P1_GRADE_DIR/grade.json" "$P1_GRADE_DIR/judge.json" \
+  > "$P1_GRADE_DIR/inventory.json"
+if jq -e '.capture_status == "partial" and .detector_completed == false and
+           .raw_candidates == 1 and .candidates[0].outcome == "incomplete" and
+           .candidates[0].evidence_status == "incomplete"' "$P1_GRADE_DIR/inventory.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: P1 verification requires a passing deterministic grade"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: P1 adapter verified despite a failing deterministic grade"
+fi
+find "$P1_GRADE_DIR" -depth -delete
+
 ALL_DIR="$ROOT/evals/results/$STAMP-all"
 bash "$ROOT/evals/run.sh" --runtime mock --scenario all --runs 1 --judge mock \
   --results-dir "$ALL_DIR" >/dev/null
@@ -64,6 +125,14 @@ if jq -e '.accounting.attempt_count == .total and (.accounting.rollups.by_attemp
   PASS=$((PASS+1)); echo "PASS: aggregate summary contains exact-once accounting rollups"
 else
   FAIL=$((FAIL+1)); echo "FAIL: aggregate accounting rollups"
+fi
+if jq -e '
+  (.finding_observations.runs[] | select(.scenario == "review-honesty-clean-diff") | .capture_status == "complete" and .counts.raw_candidates == 0 and .counts.emitted_candidates == 0) and
+  (.finding_observations.runs[] | select(.scenario == "review-honesty-real-p1") | .capture_status == "complete" and .counts.raw_candidates == 1 and .counts.emitted_candidates == 1 and .counts.terminal_stage == 1) and
+  (.finding_observations.runs[] | select(.scenario == "tdd-under-deadline") | .capture_status == "unknown" and ([.counts[]] | all(. == null)))' "$ALL_DIR/summary.json" >/dev/null; then
+  PASS=$((PASS+1)); echo "PASS: aggregate finding summaries distinguish proven empty, finding, and unknown"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: aggregate finding observation summaries"
 fi
 
 EXPLICIT_ALL_DIR="$ROOT/evals/results/$STAMP-all-explicit"
@@ -144,15 +213,21 @@ fi
 rm -rf "$CONSUMER_ROOT"
 
 BUILDER_ROOT=$(mktemp -d /tmp/harness-observation-builder-failure.XXXXXX)
-mkdir -p "$BUILDER_ROOT/evals/lib" "$BUILDER_ROOT/evals/drivers" "$BUILDER_ROOT/evals/scenarios"
+mkdir -p "$BUILDER_ROOT/evals/lib" "$BUILDER_ROOT/evals/drivers" "$BUILDER_ROOT/evals/scenarios" \
+  "$BUILDER_ROOT/evals/config" "$BUILDER_ROOT/evals/schemas"
 cp "$ROOT/evals/run.sh" "$BUILDER_ROOT/evals/run.sh"
+cp "$ROOT/evals/judge.sh" "$BUILDER_ROOT/evals/judge.sh"
 cp "$ROOT/evals/lib/accounting.py" "$BUILDER_ROOT/evals/lib/accounting.py"
 cp "$ROOT/evals/lib/normalize_transcript.py" "$BUILDER_ROOT/evals/lib/normalize_transcript.py"
+cp "$ROOT/evals/lib/build_finding_observations.py" "$BUILDER_ROOT/evals/lib/build_finding_observations.py"
+cp "$ROOT/evals/config/finding-observations.trusted.json" "$BUILDER_ROOT/evals/config/finding-observations.trusted.json"
+cp "$ROOT/evals/schemas/finding-observations.v1.schema.json" "$BUILDER_ROOT/evals/schemas/finding-observations.v1.schema.json"
 printf '#!/usr/bin/env python3\nraise SystemExit(1)\n' > "$BUILDER_ROOT/evals/lib/build_observations.py"
 printf '#!/bin/sh\nexit 0\n' > "$BUILDER_ROOT/evals/lib/install-harness.sh"
 chmod +x "$BUILDER_ROOT/evals/lib/install-harness.sh"
 cp "$ROOT/evals/drivers/mock.sh" "$BUILDER_ROOT/evals/drivers/mock.sh"
 cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$BUILDER_ROOT/evals/scenarios/tdd-under-deadline"
+cp -R "$ROOT/evals/scenarios/review-honesty-real-p1" "$BUILDER_ROOT/evals/scenarios/review-honesty-real-p1"
 BUILDER_RESULTS="$BUILDER_ROOT/results"
 bash "$BUILDER_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
   --results-dir "$BUILDER_RESULTS" >/dev/null 2>&1
@@ -163,6 +238,21 @@ if [ "$BUILDER_STATUS" -eq 0 ] &&
   PASS=$((PASS+1)); echo "PASS: observation-builder failure emits a full typed terminal accounting fallback"
 else
   FAIL=$((FAIL+1)); echo "FAIL: observation-builder failure fallback"
+fi
+P1_BUILDER_RESULTS="$BUILDER_ROOT/p1-results"
+bash "$BUILDER_ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock \
+  --results-dir "$P1_BUILDER_RESULTS" >/dev/null 2>&1
+if jq -e '.status == "error" and .reason == "observation builder failed" and
+           .finding_observations_producer.status == "success" and
+           .finding_observation_completeness.capture_status == "complete" and
+           .finding_observation_completeness.counts.raw_candidates == 1 and
+           .finding_observation_completeness.counts.emitted_candidates == 1 and
+           .finding_observation_completeness.counts.terminal_stage == 1' \
+    "$P1_BUILDER_RESULTS/review-honesty-real-p1-mock-1/run.json" >/dev/null &&
+   [ -f "$P1_BUILDER_RESULTS/review-honesty-real-p1-mock-1/finding-observations.v1.generation/finding-observations.v1.jsonl" ]; then
+  PASS=$((PASS+1)); echo "PASS: late observation-builder failure preserves published finding evidence"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: late observation-builder failure erased finding evidence"
 fi
 rm -rf "$BUILDER_ROOT"
 

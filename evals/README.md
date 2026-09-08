@@ -16,6 +16,7 @@ bash evals/conformance.test.sh   # native payloads and adapter behavior
 bash evals/install.test.sh       # four-runtime installer + non-destructive failure matrix
 bash evals/visual-qa.test.sh     # visual-qa script: import safety, image-diff, interlace reject
 python3 evals/evidence.test.py   # sanitized transcript and exit-code reconciliation
+python3 evals/finding_observations.test.py # candidate inventory producer and atomic writer
 bash evals/graders.test.sh       # deterministic scenario-grader regressions
 bash evals/runner.test.sh        # runner fault modes and five-scenario aggregate
 ```
@@ -69,6 +70,24 @@ Each token dimension must be a finite, nonnegative safe integer no larger than
 9007199254740991; runtime costs use the same finite, nonnegative JSON-safe magnitude.
 Invalid fields are null independently, preserving valid sibling telemetry and recomputing
 state.
+
+## Optional finding observations
+
+After driver, grade, and judge completion, a scenario may provide an executable
+`finding-candidates.sh`. It receives `$WORKSPACE`, `$RUN_DIR`, `$DRIVER_RECORD`, `$GRADE`,
+and `$JUDGE_RECORD` as positional arguments and prints one closed
+`finding-candidate-inventory.v1` JSON object. The reusable producer validates that
+sanitized inventory against `evals/config/finding-observations.trusted.json`, then writes
+`finding-observations.v1.jsonl` and its run summary with mode 0600 inside a private
+generation directory. One atomic directory rename publishes the pair, so neither file is
+visible at its canonical artifact path unless both are complete and durable.
+
+A completed detector may prove zero candidates. A scenario with no adapter, or a failure
+before a trustworthy denominator exists, emits an explicit `unknown` capture and never a
+clean zero. Finding producer status is reported separately in `run.json` and aggregate
+`summary.json`; it does not alter the existing evaluation or `observations.v1.jsonl`
+status. The files remain machine-local with `visibility_tier: "team"`; the runner does
+not upload them or mutate any external system.
 
 Costs are grouped by provenance and currency, never folded into an unlabeled total:
 `runtime_reported`, `pricing_estimate`, `allocated_subscription`, or `unknown`.

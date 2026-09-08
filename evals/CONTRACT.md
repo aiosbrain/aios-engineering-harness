@@ -54,6 +54,14 @@ record shapes:
   program rollups, rejects conflicting replays and verified-outcome evidence, and counts
   only verified outcome IDs bound to a passing reviewer/verifier terminal record and its
   exact current SHA. Incomplete telemetry can downgrade a run but never upgrade one.
+- `lib/build_finding_observations.py` — optional, standard-library-only projection from
+  a closed sanitized candidate inventory into the finding-observations v1 discovery
+  lifecycle. It verifies the consumer's reviewed registry and pinned schema, preserves
+  supplied observation time and structural identity, reconciles malformed accounting,
+  validates the complete ledger, writes both mode-0600 artifacts inside a private
+  generation directory, and publishes that complete directory with one atomic rename.
+  Producer failures never change an evaluation verdict or create a valid
+  analytics claim. `run.sh` remains compatible when this module and registry are absent.
 - `drivers/claude.sh`, `drivers/codex.sh`, `drivers/opencode.sh` — shell out to the real
   runtime CLIs. Verified harness-agnostic: no reference to `.harness/`, `AGENTS.md`, or
   any file `lib/install-harness.sh` creates.
@@ -77,7 +85,10 @@ results, and phase gates. Raw transcripts remain local ignored artifacts.
   synced — each consumer's mock driver only knows about its own scenarios.
 - **`scenarios/`** — the actual atoms (`manifest.json`, `prompt.md`, `setup.sh`,
   `grade.sh`, `mock-judge.sh` when `semantic_required: true` and mock-mode judging is
-  needed, and `rubric.md` for the live judge). Fully repo-specific by design; see
+  needed, `rubric.md` for the live judge, and optional executable
+  `finding-candidates.sh`). The finding adapter receives workspace, run directory,
+  driver record, grade record, and judge record paths, and emits only the closed
+  `finding-candidate-inventory.v1` envelope. Fully repo-specific by design; see
   `evals/README.md` for the shape.
 
 ## Consuming this lab from another repo
@@ -95,12 +106,15 @@ sync includes detailed accounting. During that staged interval, `run.sh` preserv
 legacy execution and emits explicit `legacy_unknown` accounting.
 
 
-## Finding observations (separate, contract-only artifact)
+## Finding observations (separate optional artifact)
 
 [`FINDING_OBSERVATIONS_CONTRACT.md`](FINDING_OBSERVATIONS_CONTRACT.md) defines
 `finding-observations.v1.jsonl`, its closed schema, identity, lifecycle, completeness,
 and privacy validation boundary. The normative contract and schema are reusable core;
-trusted producer/codebase registries are consumer-owned configuration. The fixtures and
-`finding_observations_test_support.py` are test-only conformance oracles, not producers.
-This artifact neither extends nor changes `observations.v1.jsonl`; no finding emission,
-upload, persistence, or dashboard behavior is implemented here.
+trusted producer/codebase registries are consumer-owned reviewed configuration. The
+fixtures and `finding_observations_test_support.py` remain test-only conformance oracles.
+When both a consumer registry and `lib/build_finding_observations.py` are present,
+`run.sh` can build a machine-local artifact from a scenario adapter; otherwise it emits
+an explicit unknown summary (or keeps legacy execution when neither component exists).
+This path neither extends nor changes `observations.v1.jsonl`, and implements no upload,
+endpoint, database, Linear mutation, or dashboard behavior.

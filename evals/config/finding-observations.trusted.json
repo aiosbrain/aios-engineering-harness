@@ -1,0 +1,8 @@
+{
+  "schema_sha256": "a51f360769ab26440287891867447baf6e3df93073df6f0d7febc1f3c10322b2",
+  "producers": {
+    "harness": ["1.0.0"]
+  },
+  "codebases": ["harness"],
+  "linear_teams": ["AIO"]
+}

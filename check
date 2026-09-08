@@ -132,9 +132,11 @@ fi
 # ── schema ───────────────────────────────────────────────────────────────────
 if python3 -c 'import jsonschema' >/dev/null 2>&1; then
   run "evals/finding_observations_contract.test.py" python3 evals/finding_observations_contract.test.py
+  run "evals/finding_observations.test.py" python3 evals/finding_observations.test.py
   run "evals/validate_judge_schema.py" python3 evals/validate_judge_schema.py
 else
   skip "evals/finding_observations_contract.test.py" "pip install jsonschema"
+  skip "evals/finding_observations.test.py" "pip install jsonschema"
   skip "evals/validate_judge_schema.py" "pip install jsonschema"
 fi
 
