@@ -213,15 +213,21 @@ fi
 rm -rf "$CONSUMER_ROOT"
 
 BUILDER_ROOT=$(mktemp -d /tmp/harness-observation-builder-failure.XXXXXX)
-mkdir -p "$BUILDER_ROOT/evals/lib" "$BUILDER_ROOT/evals/drivers" "$BUILDER_ROOT/evals/scenarios"
+mkdir -p "$BUILDER_ROOT/evals/lib" "$BUILDER_ROOT/evals/drivers" "$BUILDER_ROOT/evals/scenarios" \
+  "$BUILDER_ROOT/evals/config" "$BUILDER_ROOT/evals/schemas"
 cp "$ROOT/evals/run.sh" "$BUILDER_ROOT/evals/run.sh"
+cp "$ROOT/evals/judge.sh" "$BUILDER_ROOT/evals/judge.sh"
 cp "$ROOT/evals/lib/accounting.py" "$BUILDER_ROOT/evals/lib/accounting.py"
 cp "$ROOT/evals/lib/normalize_transcript.py" "$BUILDER_ROOT/evals/lib/normalize_transcript.py"
+cp "$ROOT/evals/lib/build_finding_observations.py" "$BUILDER_ROOT/evals/lib/build_finding_observations.py"
+cp "$ROOT/evals/config/finding-observations.trusted.json" "$BUILDER_ROOT/evals/config/finding-observations.trusted.json"
+cp "$ROOT/evals/schemas/finding-observations.v1.schema.json" "$BUILDER_ROOT/evals/schemas/finding-observations.v1.schema.json"
 printf '#!/usr/bin/env python3\nraise SystemExit(1)\n' > "$BUILDER_ROOT/evals/lib/build_observations.py"
 printf '#!/bin/sh\nexit 0\n' > "$BUILDER_ROOT/evals/lib/install-harness.sh"
 chmod +x "$BUILDER_ROOT/evals/lib/install-harness.sh"
 cp "$ROOT/evals/drivers/mock.sh" "$BUILDER_ROOT/evals/drivers/mock.sh"
 cp -R "$ROOT/evals/scenarios/tdd-under-deadline" "$BUILDER_ROOT/evals/scenarios/tdd-under-deadline"
+cp -R "$ROOT/evals/scenarios/review-honesty-real-p1" "$BUILDER_ROOT/evals/scenarios/review-honesty-real-p1"
 BUILDER_RESULTS="$BUILDER_ROOT/results"
 bash "$BUILDER_ROOT/evals/run.sh" --runtime mock --scenario tdd-under-deadline --runs 1 \
   --results-dir "$BUILDER_RESULTS" >/dev/null 2>&1
@@ -232,6 +238,21 @@ if [ "$BUILDER_STATUS" -eq 0 ] &&
   PASS=$((PASS+1)); echo "PASS: observation-builder failure emits a full typed terminal accounting fallback"
 else
   FAIL=$((FAIL+1)); echo "FAIL: observation-builder failure fallback"
+fi
+P1_BUILDER_RESULTS="$BUILDER_ROOT/p1-results"
+bash "$BUILDER_ROOT/evals/run.sh" --runtime mock --scenario review-honesty-real-p1 --runs 1 --judge mock \
+  --results-dir "$P1_BUILDER_RESULTS" >/dev/null 2>&1
+if jq -e '.status == "error" and .reason == "observation builder failed" and
+           .finding_observations_producer.status == "success" and
+           .finding_observation_completeness.capture_status == "complete" and
+           .finding_observation_completeness.counts.raw_candidates == 1 and
+           .finding_observation_completeness.counts.emitted_candidates == 1 and
+           .finding_observation_completeness.counts.terminal_stage == 1' \
+    "$P1_BUILDER_RESULTS/review-honesty-real-p1-mock-1/run.json" >/dev/null &&
+   [ -f "$P1_BUILDER_RESULTS/review-honesty-real-p1-mock-1/finding-observations.v1.generation/finding-observations.v1.jsonl" ]; then
+  PASS=$((PASS+1)); echo "PASS: late observation-builder failure preserves published finding evidence"
+else
+  FAIL=$((FAIL+1)); echo "FAIL: late observation-builder failure erased finding evidence"
 fi
 rm -rf "$BUILDER_ROOT"
 

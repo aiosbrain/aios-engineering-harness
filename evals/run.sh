@@ -101,7 +101,11 @@ write_early_failure() {
       status:"error",exit_status:null,current_sha:$current_sha,reviewed_sha:"unknown",observation_verdict:"error",reason:$reason,duration_ms:0,program_id:$program_id,issue_id:$issue_id,phase:$phase,invocation_id:$invocation_id,attempt_id:$attempt_id,role:$role,verified_outcome:null,usage:$usage,
       artifacts:{observations:$observations,observation_summary:$observation_summary},
       observation_completeness:$completeness[0]}' > "$RUN_RECORD"
-  produce_finding_observations unknown
+  # A later legacy-observation failure must not erase a finding generation that
+  # already crossed its atomic publication point with a trustworthy denominator.
+  if [ ! -f "$FINDING_OBSERVATIONS" ] || [ ! -f "$FINDING_SUMMARY" ]; then
+    produce_finding_observations unknown
+  fi
   attach_finding_observations
 }
 
