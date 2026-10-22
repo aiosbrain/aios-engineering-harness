@@ -23,7 +23,8 @@ forged host (`BUN_BE_BUN=1 opencode -e "fetch(...)"`). Any provider key OpenCode
 until OpenCode is rebuilt on a fixed Bun.
 
 None of `--use-system-ca`, `NODE_USE_SYSTEM_CA=1` or `--use-openssl-ca` removes the bundled roots on
-1.4.3 (they merge with them; see oven-sh/bun#46300 and #46302), and `NODE_EXTRA_CA_CERTS` only adds.
+1.4.3: each still fetched the forged host in a local test on 2026-10-22, and oven-sh/bun#46302's
+description says `--use-openssl-ca` still adds the bundled set. `NODE_EXTRA_CA_CERTS` only adds.
 
 ## Upstream
 
@@ -36,16 +37,30 @@ None of `--use-system-ca`, `NODE_USE_SYSTEM_CA=1` or `--use-openssl-ca` removes 
 ## The gate
 
 `scripts/bun-trust-probe.sh` asks the Bun on `PATH` to fetch both forged hosts and a control.
-It exits 1 while either forged host is trusted, 2 if the control is unreachable, 0 only when both
-forged hosts are refused and the control succeeds. CI runs it on `BUN_VERSION` as the
-`Bun trust-store hold` job.
+Each forged host is first fetched with verification **off**, so a host that cannot be reached is
+reported as unreachable instead of being mistaken for a refusal. Only a certificate-verification
+error counts as refused.
+
+| Exit | Meaning |
+|---|---|
+| 0 | both forged hosts reached and refused with a certificate error, control reachable |
+| 1 | Bun trusted a forged chain: the hold stays |
+| 2 | inconclusive (DNS, timeout, proxy, hosts gone, non-certificate error): the hold stays |
+
+CI runs it on `BUN_VERSION` as the `Bun trust-store hold (eMudhra)` job, and `./check` runs it on
+the local Bun. **How the hold is enforced:** the README banner, a red CI job, and a red `./check`.
+The job is made a required status check on `main` once this lands, so no other change merges
+until the hold lifts; the lift PR itself turns it green by bumping `BUN_VERSION`.
 
 ## Lifting the hold
 
 1. A Bun release (not canary) that contains #46300 is published.
-2. Bump `BUN_VERSION` in `.github/workflows/ci.yml` to it; the hold job goes green.
+2. Bump `BUN_VERSION` in `.github/workflows/ci.yml` to it; the hold job goes green. If it exits
+   2 instead, the demo hosts may be gone: check https://emudhra.we-have-a-problem.com/ and the
+   upstream release notes, and substitute any still-published forged-chain test host before
+   lifting. Do not lift on an inconclusive run.
 3. Run `bash scripts/bun-trust-probe.sh` locally after `bun upgrade`; it must print
    "hold can be lifted".
 4. Upgrade OpenCode once it ships on that Bun, and re-run
    `BUN_BE_BUN=1 opencode -e "fetch('https://dv-g3b-emudhra.we-have-a-problem.com/').then(()=>console.log('TRUSTED')).catch(e=>console.log('REFUSED', e.code))"`.
-5. Remove the README banner, then delete this file in the same PR (or mark it Lifted with the date).
+5. Remove the README banner and the required-check setting, then mark this file Lifted with the date.

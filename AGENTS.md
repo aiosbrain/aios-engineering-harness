@@ -63,6 +63,10 @@ python3 evals/skill-runtime-conformance.test.py
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)
 bun test evals/opencode-plugin.test.ts
 
+# Bun trust-store hold — matches CI's bun-trust-hold job; exits 1 while Bun trusts a forged
+# eMudhra chain, 2 when inconclusive (see docs/bun-emudhra-hold.md)
+bash scripts/bun-trust-probe.sh
+
 # Judge schema + fixtures — matches CI's schema job
 pip install jsonschema
 python3 evals/validate_judge_schema.py

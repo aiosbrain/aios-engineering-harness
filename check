@@ -129,6 +129,15 @@ else
   skip "bun test evals/opencode-plugin.test.ts" "bun not on PATH"
 fi
 
+# ── bun-trust-hold (eMudhra; docs/bun-emudhra-hold.md) ──────────────────────────
+# Fails while the local Bun trusts a forged eMudhra chain, matching CI's hold job. Exit 2
+# (unreachable / non-certificate failure) fails too: inconclusive is never a pass.
+if command -v bun >/dev/null 2>&1; then
+  run "scripts/bun-trust-probe.sh" bash scripts/bun-trust-probe.sh
+else
+  skip "scripts/bun-trust-probe.sh" "bun not on PATH"
+fi
+
 # ── schema ───────────────────────────────────────────────────────────────────
 if python3 -c 'import jsonschema' >/dev/null 2>&1; then
   run "evals/finding_observations_contract.test.py" python3 evals/finding_observations_contract.test.py
