@@ -60,7 +60,7 @@ if [ "$trusted" -ne 0 ]; then
   exit 1
 fi
 if [ "$inconclusive" -ne 0 ]; then
-  echo "INCONCLUSIVE: a host was unreachable or failed for a non-certificate reason; the hold stays." >&2
+  echo "INCONCLUSIVE: a host was unreachable or failed with something other than CERT_REVOKED; the hold stays." >&2
   exit 2
 fi
 echo "bun refuses the forged chains: hold can be lifted"

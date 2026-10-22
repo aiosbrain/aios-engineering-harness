@@ -46,7 +46,7 @@ because a vulnerable Bun would also refuse an unrelated bad certificate.
 |---|---|
 | 0 | both forged hosts reached and refused with `CERT_REVOKED`, control reachable |
 | 1 | Bun trusted a forged chain: the hold stays |
-| 2 | inconclusive (DNS, timeout, proxy, hosts gone, non-certificate error): the hold stays |
+| 2 | inconclusive (DNS, timeout, proxy, hosts gone, any error other than `CERT_REVOKED`): the hold stays |
 
 CI runs it on `BUN_VERSION` as the `Bun trust-store hold (eMudhra)` job, and `./check` runs it on
 the local Bun. **How the hold is enforced:** the README banner, a red CI job, and a red `./check`.

@@ -131,7 +131,7 @@ fi
 
 # ── bun-trust-hold (eMudhra; docs/bun-emudhra-hold.md) ──────────────────────────
 # Fails while the local Bun trusts a forged eMudhra chain, matching CI's hold job. Exit 2
-# (unreachable / non-certificate failure) fails too: inconclusive is never a pass.
+# (unreachable, or any error other than CERT_REVOKED) fails too: inconclusive is never a pass.
 if command -v bun >/dev/null 2>&1; then
   run "scripts/bun-trust-probe.sh" bash scripts/bun-trust-probe.sh
 else
