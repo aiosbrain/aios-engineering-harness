@@ -38,19 +38,20 @@ description says `--use-openssl-ca` still adds the bundled set. `NODE_EXTRA_CA_C
 
 `scripts/bun-trust-probe.sh` asks the Bun on `PATH` to fetch both forged hosts and a control.
 Each forged host is first fetched with verification **off**, so a host that cannot be reached is
-reported as unreachable instead of being mistaken for a refusal. Only a certificate-verification
-error counts as refused.
+reported as unreachable instead of being mistaken for a refusal. Only `CERT_REVOKED`, the verdict
+of the upstream blocked-key check, counts as refused; any other certificate error is inconclusive,
+because a vulnerable Bun would also refuse an unrelated bad certificate.
 
 | Exit | Meaning |
 |---|---|
-| 0 | both forged hosts reached and refused with a certificate error, control reachable |
+| 0 | both forged hosts reached and refused with `CERT_REVOKED`, control reachable |
 | 1 | Bun trusted a forged chain: the hold stays |
 | 2 | inconclusive (DNS, timeout, proxy, hosts gone, non-certificate error): the hold stays |
 
 CI runs it on `BUN_VERSION` as the `Bun trust-store hold (eMudhra)` job, and `./check` runs it on
 the local Bun. **How the hold is enforced:** the README banner, a red CI job, and a red `./check`.
-The job is made a required status check on `main` once this lands, so no other change merges
-until the hold lifts; the lift PR itself turns it green by bumping `BUN_VERSION`.
+The job is a required status check on `main`, so no other change merges until the hold lifts;
+the lift PR itself turns it green by bumping `BUN_VERSION`.
 
 ## Lifting the hold
 

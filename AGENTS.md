@@ -108,7 +108,7 @@ bash evals/run.sh --runtime mock --scenario all --runs 1 --judge mock --results-
 ## Verification
 
 Definition of done for any change here: the CI suite green
-(`.github/workflows/ci.yml` — lint-shell, tests, plugin-test, schema, secret-scan,
+(`.github/workflows/ci.yml` — lint-shell, tests, plugin-test, bun-trust-hold, schema, secret-scan,
 conformance-smoke) plus, for anything touching `hooks/` or `adapters/`, the relevant
 `evals/*.test.sh` run locally first.
 

@@ -8,9 +8,9 @@
 # pinned BUN_VERSION is a release that carries oven-sh/bun#46300.
 #
 # Exit codes:
-#   0  every forged host was REACHED and refused with a certificate error, and the control passed
+#   0  every forged host was REACHED and refused with CERT_REVOKED, and the control passed
 #   1  Bun trusted a forged chain (the hold stays)
-#   2  inconclusive: a host was unreachable, or failed for a non-certificate reason. A DNS outage,
+#   2  inconclusive: a host was unreachable, or failed with anything but CERT_REVOKED. A DNS outage,
 #      a timeout, a proxy, or the demo hosts going away must never read as "Bun is fixed".
 set -euo pipefail
 
@@ -23,14 +23,14 @@ CONTROL=https://example.com/
 
 # Prints one of: TRUSTED | REFUSED:<code> | UNREACHABLE:<code> | ERROR:<code>
 # Step 1 fetches with verification OFF: if that fails, the host is not reachable and nothing can
-# be concluded. Step 2 fetches with verification ON. Only an error whose code is a certificate
-# verification failure counts as a refusal.
+# be concluded. Step 2 fetches with verification ON. Only CERT_REVOKED counts as a refusal: it is
+# what the fix (a blocked-public-key check, oven-sh/bun#46300) returns for these chains. Any other
+# certificate error could mean the demo host now serves some unrelated bad certificate, which a
+# vulnerable Bun would refuse too, so it is inconclusive rather than proof of a fix.
 probe() {
   "$BUN" -e '
     const url = process.argv[1];
-    const CERT = new Set(["CERT_REVOKED", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "UNABLE_TO_GET_ISSUER_CERT",
-      "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_UNTRUSTED", "SELF_SIGNED_CERT_IN_CHAIN",
-      "DEPTH_ZERO_SELF_SIGNED_CERT", "CERT_SIGNATURE_FAILURE", "CERT_CHAIN_TOO_LONG"]);
+    const CERT = new Set(["CERT_REVOKED"]);
     const code = (e) => String(e?.code ?? e?.cause?.code ?? e?.name ?? "unknown");
     const opts = (insecure) => ({ signal: AbortSignal.timeout(15000), ...(insecure ? { tls: { rejectUnauthorized: false } } : {}) });
     try { await fetch(url, opts(true)); } catch (e) { console.log("UNREACHABLE:" + code(e)); process.exit(0); }
