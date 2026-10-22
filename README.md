@@ -1,5 +1,11 @@
 # AIOS Engineering Harness
 
+> **⏸ ON HOLD since 2026-10-22: do not adopt or run until Bun ships its eMudhra fix.**
+> Bun (which this harness's OpenCode adapter, its plugin tests, and OpenCode itself run on)
+> still trusts certificates forged with the compromised eMudhra intermediate CAs, so API keys
+> sent from a Bun process can be intercepted. The `Bun trust-store hold` CI job is red until
+> `BUN_VERSION` is a fixed release. Details and the lift procedure: [docs/bun-emudhra-hold.md](docs/bun-emudhra-hold.md).
+
 A curated, drop-in harness for **agentic software engineering** — the skills, hooks,
 guards, subagent definitions, verification rubrics, and model-routing conventions that
 make coding agents produce production-grade work on any stack (TypeScript, PHP, Python,
