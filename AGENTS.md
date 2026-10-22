@@ -63,6 +63,10 @@ python3 evals/skill-runtime-conformance.test.py
 # OpenCode plugin tests — matches CI's plugin-test job (pinned Bun version)
 bun test evals/opencode-plugin.test.ts
 
+# Bun trust-store hold — matches CI's bun-trust-hold job; exits 1 while Bun trusts a forged
+# eMudhra chain, 2 when inconclusive (see docs/bun-emudhra-hold.md)
+bash scripts/bun-trust-probe.sh
+
 # Judge schema + fixtures — matches CI's schema job
 pip install jsonschema
 python3 evals/validate_judge_schema.py
@@ -104,7 +108,7 @@ bash evals/run.sh --runtime mock --scenario all --runs 1 --judge mock --results-
 ## Verification
 
 Definition of done for any change here: the CI suite green
-(`.github/workflows/ci.yml` — lint-shell, tests, plugin-test, schema, secret-scan,
+(`.github/workflows/ci.yml` — lint-shell, tests, plugin-test, bun-trust-hold, schema, secret-scan,
 conformance-smoke) plus, for anything touching `hooks/` or `adapters/`, the relevant
 `evals/*.test.sh` run locally first.
 
